@@ -1,90 +1,57 @@
-/**
- * Standalone smoke test for src/github/*, run against a REAL repo before any
- * Telegram/Claude wiring exists. This will actually push a branch and open a
- * draft PR -- point it at a scratch/test repo you own, not anything shared.
- *
- * Usage:
- *   pnpm test:github [owner/repo] [baseBranch]
- * Falls back to GITHUB_DEFAULT_REPO / GITHUB_DEFAULT_BASE_BRANCH from .env.
- */
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { nanoid } from "nanoid";
-import { env, resolveGithubAuth } from "../src/config/index.js";
-import {
-  buildCloneUrl,
-  buildBranchName,
-  cleanupWorkdir,
-  commitAll,
-  createBranch,
-  createDraftPullRequest,
-  createOctokit,
-  getGitAuthHeader,
-  prepareRepoWorkdir,
-  pushBranch,
-  scratchDirFor,
-  splitOwnerRepo,
-} from "../src/github/index.js";
-import { promises as fs } from "node:fs";
+import { config } from "../src/config/index.js";
+import { createOctokit } from "../src/github/client.js";
+import { cloneRepo, createBranch, commitAll, pushBranch, cleanupClone } from "../src/github/repo.js";
+import { createDraftPullRequest } from "../src/github/pr.js";
+import { buildBranchName } from "../src/github/slug.js";
 
 async function main() {
-  const targetRepo = process.argv[2] ?? env.GITHUB_DEFAULT_REPO;
-  const baseBranch = process.argv[3] ?? env.GITHUB_DEFAULT_BASE_BRANCH;
-  const { owner, repo } = splitOwnerRepo(targetRepo);
+  const jobId = Date.now();
+  const branchName = buildBranchName("standalone github module test", jobId);
 
-  const jobId = nanoid(8);
-  const branchName = buildBranchName("github module smoke test", jobId);
-  const dir = path.resolve(scratchDirFor(env.WORKER_SCRATCH_DIR, jobId));
+  console.log(`Cloning ${config.github.slug}@${config.github.baseBranch}...`);
+  const { git, dir } = await cloneRepo({
+    owner: config.github.owner,
+    repo: config.github.repo,
+    token: config.github.auth.token,
+    baseBranch: config.github.baseBranch,
+    scratchDir: config.worker.scratchDir,
+    jobId,
+  });
+  console.log(`Cloned to ${dir}`);
 
-  console.log(`[test-github] repo=${targetRepo} base=${baseBranch} branch=${branchName}`);
-  console.log(`[test-github] scratch dir: ${dir}`);
+  await createBranch(git, branchName);
+  console.log(`Created branch ${branchName}`);
 
-  const auth = resolveGithubAuth();
-  const authHeader = await getGitAuthHeader(auth);
-  const cloneUrl = buildCloneUrl(owner, repo);
+  const testFile = path.join(dir, "AGENT_BRIDGE_TEST.md");
+  await writeFile(
+    testFile,
+    `# telegram-agent-bridge test\n\nGenerated at ${new Date().toISOString()}. Safe to delete/close.\n`
+  );
 
-  let cleanedUp = false;
-  try {
-    console.log("[test-github] cloning...");
-    const git = await prepareRepoWorkdir({ cloneUrl, dir, authHeader, checkoutBranch: baseBranch });
+  await commitAll(git, `test: verify github module (job ${jobId})`);
+  await pushBranch(git, branchName);
+  console.log(`Pushed ${branchName}`);
 
-    console.log(`[test-github] creating branch ${branchName}...`);
-    await createBranch(git, branchName);
+  const octokit = createOctokit(config.github.auth);
+  const prUrl = await createDraftPullRequest({
+    octokit,
+    owner: config.github.owner,
+    repo: config.github.repo,
+    base: config.github.baseBranch,
+    head: branchName,
+    title: "[test] telegram-agent-bridge github module",
+    body: "Standalone test of the github module (clone, branch, commit, push, draft PR). Safe to close.",
+  });
 
-    const markerPath = path.join(dir, "AGENT_TEST_LOG.md");
-    const line = `- telegram-agent-bridge github-module smoke test at ${new Date().toISOString()} (job ${jobId})\n`;
-    await fs.appendFile(markerPath, line, "utf8");
+  console.log(`Draft PR opened: ${prUrl}`);
 
-    console.log("[test-github] committing...");
-    const committed = await commitAll(git, `test: github module smoke test (job ${jobId})`);
-    if (!committed) {
-      throw new Error("Expected a change to commit but working tree was clean");
-    }
-
-    console.log("[test-github] pushing...");
-    await pushBranch(git, branchName, authHeader);
-
-    console.log("[test-github] opening draft PR...");
-    const octokit = createOctokit(auth);
-    const pr = await createDraftPullRequest({
-      octokit,
-      owner,
-      repo,
-      base: baseBranch,
-      head: branchName,
-      title: `[test] github module smoke test (${jobId})`,
-      telegramRequestText: "(this is a standalone test run, not a real Telegram request)",
-      telegramMessageLink: "https://t.me/c/TEST/TEST",
-    });
-
-    console.log(`[test-github] SUCCESS: ${pr.url}`);
-  } finally {
-    await cleanupWorkdir(dir);
-    cleanedUp = true;
-    console.log(`[test-github] cleaned up scratch dir (${cleanedUp})`);
-  }
+  await cleanupClone(dir);
+  console.log("Local scratch clone cleaned up.");
 }
 
 main().catch((err) => {
-  console.error("[test-github] FAILED:", err);
+  console.error("test-github failed:", err);
   process.exit(1);
 });

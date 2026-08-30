@@ -1,6 +1,6 @@
 allowBuilds:
+  better-sqlite3: true
   esbuild: true
-  msgpackr-extract: true
-minimumReleaseAgeExclude:
-  - tsx@4.23.13
-  - zod@4.5.4
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild

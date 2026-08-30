@@ -1,5 +1,6 @@
-import { env } from "./config/index.js";
+import { startWorker } from "./worker/poll.js";
 
-// Placeholder worker entrypoint. BullMQ worker wiring lands once the GitHub
-// and Claude modules are confirmed working (see README).
-console.log(`telegram-agent-bridge worker starting (env: ${env.NODE_ENV})`);
+startWorker().catch((err) => {
+  console.error("Worker crashed:", err);
+  process.exit(1);
+});

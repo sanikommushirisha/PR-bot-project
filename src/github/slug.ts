@@ -1,13 +1,26 @@
-/** "Fix the login bug!!" -> "fix-the-login-bug" (truncated, git-ref-safe). */
-export function slugify(text: string, maxLength = 40): string {
-  const slug = text
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug.slice(0, maxLength).replace(/-+$/, "") || "task";
+export interface RepoSlug {
+  owner: string;
+  repo: string;
 }
 
-export function buildBranchName(taskDescription: string, jobId: string): string {
-  return `agent/${slugify(taskDescription)}-${jobId}`;
+export function parseRepoSlug(slug: string): RepoSlug {
+  const [owner, repo] = slug.split("/");
+  if (!owner || !repo) {
+    throw new Error(`Invalid repo slug "${slug}", expected "owner/repo"`);
+  }
+  return { owner, repo };
+}
+
+export function slugifyTask(description: string, maxLength = 40): string {
+  const slug = description
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength)
+    .replace(/-+$/g, "");
+  return slug || "task";
+}
+
+export function buildBranchName(taskDescription: string, jobId: number): string {
+  return `agent/${slugifyTask(taskDescription)}-${jobId}`;
 }

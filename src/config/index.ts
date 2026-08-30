@@ -1,97 +1,75 @@
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 
-/**
- * All required env vars in one schema so a missing/malformed value fails at
- * process startup with one clear error, instead of surfacing halfway through
- * a job (e.g. a job pulling a PAT that turns out to be unset only when it
- * tries to push).
- */
-const envSchema = z
-  .object({
-    NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-    LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+loadDotenv();
 
-    // --- Fastify server ---
-    PORT: z.coerce.number().int().positive().default(3000),
-    HOST: z.string().default("0.0.0.0"),
+const envSchema = z.object({
+  TELEGRAM_BOT_TOKEN: z.string().min(1, "TELEGRAM_BOT_TOKEN is required"),
+  TELEGRAM_ALLOWED_CHAT_ID: z.coerce.number({
+    invalid_type_error: "TELEGRAM_ALLOWED_CHAT_ID must be a number",
+  }),
 
-    // --- Redis / BullMQ ---
-    REDIS_URL: z.string().url(),
+  GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required"),
+  GITHUB_REPO: z
+    .string()
+    .regex(/^[^/\s]+\/[^/\s]+$/, "GITHUB_REPO must be in 'owner/repo' format"),
+  GITHUB_BASE_BRANCH: z.string().min(1).default("main"),
 
-    // --- Telegram (bot API, long polling) ---
-    /** Token from @BotFather, e.g. "123456789:AAE...". */
-    TELEGRAM_BOT_TOKEN: z.string().regex(/^\d+:[\w-]+$/, "expected a BotFather token, e.g. \"123456789:AAE...\""),
-    /** Chat (group/supergroup/channel) ID where the trigger (command / reaction) is honored. */
-    TELEGRAM_TRIGGER_CHAT_ID: z.string().min(1),
-    /** Emoji (the literal character, not a name) that triggers a task when reacted onto a message. */
-    TELEGRAM_TRIGGER_EMOJI: z.string().min(1).default("🚀"),
+  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
 
-    // --- GitHub ---
-    // Either a PAT, or a GitHub App (all three App vars together). Cross-field
-    // check below enforces that one full auth method is actually present.
-    GITHUB_TOKEN: z.string().optional(),
-    GITHUB_APP_ID: z.string().optional(),
-    GITHUB_APP_PRIVATE_KEY: z.string().optional(),
-    GITHUB_APP_INSTALLATION_ID: z.string().optional(),
-    GITHUB_DEFAULT_REPO: z.string().regex(/^[^/\s]+\/[^/\s]+$/, "expected \"owner/repo\""),
-    GITHUB_DEFAULT_BASE_BRANCH: z.string().default("main"),
+  SCRATCH_DIR: z.string().min(1).default("./scratch"),
+  DB_PATH: z.string().min(1).default("./data/jobs.sqlite"),
+  JOB_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(7000),
+  STUCK_JOB_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
 
-    // --- Claude ---
-    ANTHROPIC_API_KEY: z.string().min(1),
+  PORT: z.coerce.number().int().positive().default(3000),
+});
 
-    // --- Worker ---
-    /** Where scratch clones for in-flight jobs live. */
-    WORKER_SCRATCH_DIR: z.string().default("./scratch"),
-  })
-  .superRefine((env, ctx) => {
-    const hasPat = !!env.GITHUB_TOKEN;
-    const hasApp = !!(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY && env.GITHUB_APP_INSTALLATION_ID);
-
-    if (!hasPat && !hasApp) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "Set either GITHUB_TOKEN (PAT) or all of GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY + GITHUB_APP_INSTALLATION_ID (GitHub App).",
-        path: ["GITHUB_TOKEN"],
-      });
-    }
-  });
-
-export type Env = z.infer<typeof envSchema>;
-
-function loadEnv(): Env {
+function loadEnv() {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
-      .join("\n");
-    // eslint-disable-next-line no-console
-    console.error(`Invalid environment configuration:\n${issues}`);
+    console.error("Invalid environment configuration:");
+    for (const issue of parsed.error.issues) {
+      console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
+    }
     process.exit(1);
   }
   return parsed.data;
 }
 
-export const env = loadEnv();
+const env = loadEnv();
+const [githubOwner, githubRepoName] = env.GITHUB_REPO.split("/");
 
-/** Narrowed GitHub auth config, resolved once so callers don't re-derive the PAT/App branch. */
-export type GithubAuthConfig =
-  | { kind: "pat"; token: string }
-  | { kind: "app"; appId: string; privateKey: string; installationId: string };
+/**
+ * `github.auth` is a discriminated union so swapping PAT auth for
+ * `@octokit/auth-app` later only means changing this shape + the factory
+ * in src/github/client.ts, not any calling code.
+ */
+export const config = {
+  telegram: {
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    allowedChatId: env.TELEGRAM_ALLOWED_CHAT_ID,
+  },
+  github: {
+    auth: { type: "pat" as const, token: env.GITHUB_TOKEN },
+    owner: githubOwner,
+    repo: githubRepoName,
+    slug: env.GITHUB_REPO,
+    baseBranch: env.GITHUB_BASE_BRANCH,
+  },
+  anthropic: {
+    apiKey: env.ANTHROPIC_API_KEY,
+  },
+  worker: {
+    scratchDir: env.SCRATCH_DIR,
+    dbPath: env.DB_PATH,
+    pollIntervalMs: env.JOB_POLL_INTERVAL_MS,
+    stuckJobTimeoutMs: env.STUCK_JOB_TIMEOUT_MS,
+  },
+  server: {
+    port: env.PORT,
+  },
+} as const;
 
-export function resolveGithubAuth(e: Env = env): GithubAuthConfig {
-  if (e.GITHUB_APP_ID && e.GITHUB_APP_PRIVATE_KEY && e.GITHUB_APP_INSTALLATION_ID) {
-    return {
-      kind: "app",
-      appId: e.GITHUB_APP_ID,
-      privateKey: e.GITHUB_APP_PRIVATE_KEY,
-      installationId: e.GITHUB_APP_INSTALLATION_ID,
-    };
-  }
-  if (e.GITHUB_TOKEN) {
-    return { kind: "pat", token: e.GITHUB_TOKEN };
-  }
-  // Unreachable: envSchema.superRefine already guarantees one of these is set.
-  throw new Error("No GitHub auth configured");
-}
+export type AppConfig = typeof config;
+export type GithubAuthConfig = AppConfig["github"]["auth"];

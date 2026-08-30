@@ -1,23 +1,34 @@
-/** Shape of a single unit of work, from Telegram trigger through to PR creation. */
-export interface AgentTaskJob {
-  /** Freeform request text pulled from the Telegram message/command. */
+export type JobStatus = "pending" | "running" | "completed" | "failed";
+
+export interface Job {
+  id: number;
   taskDescription: string;
-  /** Telegram user ID of whoever triggered the task. */
-  requestedByUserId: string;
-  /** Telegram chat ID the trigger happened in, used to post status updates back. */
-  telegramChatId: string;
-  /** Telegram message ID of the triggering message, replied to for status updates. */
-  telegramMessageId: string;
-  /** Link to the originating Telegram message (t.me/... for public chats), embedded in the PR body. */
-  telegramMessageLink: string;
-  /** "owner/repo" the agent should work against. */
+  contextNote: string | null;
+  requestingUserId: string;
+  requestingUsername: string | null;
+  chatId: string;
+  messageId: string;
+  messageThreadId: string | null;
   targetRepo: string;
-  /** Base branch the PR should target, e.g. "main". */
   targetBaseBranch: string;
+  status: JobStatus;
+  branchName: string | null;
+  prUrl: string | null;
+  errorMessage: string | null;
+  attempts: number;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
-export interface PullRequestResult {
-  url: string;
-  number: number;
-  branch: string;
+export interface CreateJobInput {
+  taskDescription: string;
+  contextNote?: string | null;
+  requestingUserId: string;
+  requestingUsername: string | null;
+  chatId: string;
+  messageId: string;
+  messageThreadId?: string | null;
+  targetRepo: string;
+  targetBaseBranch: string;
 }

@@ -88,6 +88,13 @@ function claimNextPendingJob(db: Database.Database): Job | undefined {
   return row ? rowToJob(row) : undefined;
 }
 
+function listActiveJobs(db: Database.Database): Job[] {
+  const rows = db
+    .prepare("SELECT * FROM jobs WHERE status IN ('pending', 'running') ORDER BY created_at ASC")
+    .all() as JobRow[];
+  return rows.map(rowToJob);
+}
+
 function markBranch(db: Database.Database, id: number, branchName: string): void {
   db.prepare("UPDATE jobs SET branch_name = ? WHERE id = ?").run(branchName, id);
 }
@@ -102,6 +109,20 @@ function markFailed(db: Database.Database, id: number, errorMessage: string): vo
   db.prepare(
     "UPDATE jobs SET status = 'failed', error_message = ?, completed_at = datetime('now') WHERE id = ?"
   ).run(errorMessage, id);
+}
+
+/**
+ * Cancels a job only if it's still `pending` (atomic WHERE guard avoids a
+ * race with the worker claiming it in between a check and this update).
+ * Returns false if the job doesn't exist or is no longer pending.
+ */
+function cancelPendingJob(db: Database.Database, id: number, reason: string): boolean {
+  const info = db
+    .prepare(
+      "UPDATE jobs SET status = 'failed', error_message = ?, completed_at = datetime('now') WHERE id = ? AND status = 'pending'"
+    )
+    .run(reason, id);
+  return info.changes > 0;
 }
 
 const MAX_STUCK_ATTEMPTS = 3;
@@ -151,8 +172,10 @@ export const Jobs = {
   create: createJob,
   getById: getJobById,
   claimNextPending: claimNextPendingJob,
+  listActive: listActiveJobs,
   markBranch,
   markCompleted,
   markFailed,
+  cancelPending: cancelPendingJob,
   resetStuck: resetStuckJobs,
 };

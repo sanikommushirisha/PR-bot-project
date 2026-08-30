@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+scratch/*
+!scratch/.gitkeep
+*.log
+.DS_Store

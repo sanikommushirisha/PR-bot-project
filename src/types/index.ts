@@ -1,15 +1,15 @@
-/** Shape of a single unit of work, from Slack trigger through to PR creation. */
+/** Shape of a single unit of work, from Telegram trigger through to PR creation. */
 export interface AgentTaskJob {
-  /** Freeform request text pulled from the Slack message/command. */
+  /** Freeform request text pulled from the Telegram message/command. */
   taskDescription: string;
-  /** Slack user ID of whoever triggered the task. */
+  /** Telegram user ID of whoever triggered the task. */
   requestedByUserId: string;
-  /** Slack channel ID the trigger happened in, used to post status updates back. */
-  slackChannelId: string;
-  /** Slack thread ts (the parent message ts) status updates should reply into. */
-  slackThreadTs: string;
-  /** Permalink to the originating Slack message/thread, embedded in the PR body. */
-  slackPermalink: string;
+  /** Telegram chat ID the trigger happened in, used to post status updates back. */
+  telegramChatId: string;
+  /** Telegram message ID of the triggering message, replied to for status updates. */
+  telegramMessageId: string;
+  /** Link to the originating Telegram message (t.me/... for public chats), embedded in the PR body. */
+  telegramMessageLink: string;
   /** "owner/repo" the agent should work against. */
   targetRepo: string;
   /** Base branch the PR should target, e.g. "main". */

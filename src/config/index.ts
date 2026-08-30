@@ -19,14 +19,13 @@ const envSchema = z
     // --- Redis / BullMQ ---
     REDIS_URL: z.string().url(),
 
-    // --- Slack (Socket Mode) ---
-    SLACK_BOT_TOKEN: z.string().startsWith("xoxb-"),
-    SLACK_APP_TOKEN: z.string().startsWith("xapp-"),
-    SLACK_SIGNING_SECRET: z.string().min(1),
-    /** Channel where the trigger (slash command / reaction) is honored. */
-    SLACK_TRIGGER_CHANNEL_ID: z.string().min(1),
-    /** Emoji name (no colons) that triggers a task when reacted onto a message. */
-    SLACK_TRIGGER_EMOJI: z.string().min(1).default("agent-go"),
+    // --- Telegram (bot API, long polling) ---
+    /** Token from @BotFather, e.g. "123456789:AAE...". */
+    TELEGRAM_BOT_TOKEN: z.string().regex(/^\d+:[\w-]+$/, "expected a BotFather token, e.g. \"123456789:AAE...\""),
+    /** Chat (group/supergroup/channel) ID where the trigger (command / reaction) is honored. */
+    TELEGRAM_TRIGGER_CHAT_ID: z.string().min(1),
+    /** Emoji (the literal character, not a name) that triggers a task when reacted onto a message. */
+    TELEGRAM_TRIGGER_EMOJI: z.string().min(1).default("🚀"),
 
     // --- GitHub ---
     // Either a PAT, or a GitHub App (all three App vars together). Cross-field

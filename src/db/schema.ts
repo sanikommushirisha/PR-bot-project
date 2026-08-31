@@ -5,9 +5,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   context_note TEXT,
   requesting_user_id TEXT NOT NULL,
   requesting_username TEXT,
-  chat_id TEXT NOT NULL,
-  message_id TEXT NOT NULL,
-  message_thread_id TEXT,
+  channel_id TEXT NOT NULL,
+  thread_ts TEXT,
   target_repo TEXT NOT NULL,
   target_base_branch TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending'

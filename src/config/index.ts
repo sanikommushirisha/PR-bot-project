@@ -4,10 +4,9 @@ import { z } from "zod";
 loadDotenv();
 
 const envSchema = z.object({
-  TELEGRAM_BOT_TOKEN: z.string().min(1, "TELEGRAM_BOT_TOKEN is required"),
-  TELEGRAM_ALLOWED_CHAT_ID: z.coerce.number({
-    invalid_type_error: "TELEGRAM_ALLOWED_CHAT_ID must be a number",
-  }),
+  SLACK_BOT_TOKEN: z.string().min(1, "SLACK_BOT_TOKEN is required"),
+  SLACK_APP_TOKEN: z.string().min(1, "SLACK_APP_TOKEN is required"),
+  SLACK_ALLOWED_CHANNEL_ID: z.string().min(1, "SLACK_ALLOWED_CHANNEL_ID is required"),
 
   GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required"),
   GITHUB_REPO: z
@@ -46,9 +45,10 @@ const [githubOwner, githubRepoName] = env.GITHUB_REPO.split("/");
  * in src/github/client.ts, not any calling code.
  */
 export const config = {
-  telegram: {
-    botToken: env.TELEGRAM_BOT_TOKEN,
-    allowedChatId: env.TELEGRAM_ALLOWED_CHAT_ID,
+  slack: {
+    botToken: env.SLACK_BOT_TOKEN,
+    appToken: env.SLACK_APP_TOKEN,
+    allowedChannelId: env.SLACK_ALLOWED_CHANNEL_ID,
   },
   github: {
     auth: { type: "pat" as const, token: env.GITHUB_TOKEN },

@@ -7,9 +7,8 @@ interface JobRow {
   context_note: string | null;
   requesting_user_id: string;
   requesting_username: string | null;
-  chat_id: string;
-  message_id: string;
-  message_thread_id: string | null;
+  channel_id: string;
+  thread_ts: string | null;
   target_repo: string;
   target_base_branch: string;
   status: JobStatus;
@@ -29,9 +28,8 @@ function rowToJob(row: JobRow): Job {
     contextNote: row.context_note,
     requestingUserId: row.requesting_user_id,
     requestingUsername: row.requesting_username,
-    chatId: row.chat_id,
-    messageId: row.message_id,
-    messageThreadId: row.message_thread_id,
+    channelId: row.channel_id,
+    threadTs: row.thread_ts,
     targetRepo: row.target_repo,
     targetBaseBranch: row.target_base_branch,
     status: row.status,
@@ -49,13 +47,13 @@ function createJob(db: Database.Database, input: CreateJobInput): Job {
   const stmt = db.prepare(`
     INSERT INTO jobs (
       task_description, context_note, requesting_user_id, requesting_username,
-      chat_id, message_id, message_thread_id, target_repo, target_base_branch
+      channel_id, target_repo, target_base_branch
     ) VALUES (
       @taskDescription, @contextNote, @requestingUserId, @requestingUsername,
-      @chatId, @messageId, @messageThreadId, @targetRepo, @targetBaseBranch
+      @channelId, @targetRepo, @targetBaseBranch
     )
   `);
-  const info = stmt.run({ contextNote: null, messageThreadId: null, ...input });
+  const info = stmt.run({ contextNote: null, ...input });
   return getJobById(db, Number(info.lastInsertRowid))!;
 }
 
@@ -93,6 +91,11 @@ function listActiveJobs(db: Database.Database): Job[] {
     .prepare("SELECT * FROM jobs WHERE status IN ('pending', 'running') ORDER BY created_at ASC")
     .all() as JobRow[];
   return rows.map(rowToJob);
+}
+
+/** Records the ts of the acknowledgment message every future update for this job threads under. */
+function markThread(db: Database.Database, id: number, threadTs: string): void {
+  db.prepare("UPDATE jobs SET thread_ts = ? WHERE id = ?").run(threadTs, id);
 }
 
 function markBranch(db: Database.Database, id: number, branchName: string): void {
@@ -173,6 +176,7 @@ export const Jobs = {
   getById: getJobById,
   claimNextPending: claimNextPendingJob,
   listActive: listActiveJobs,
+  markThread,
   markBranch,
   markCompleted,
   markFailed,

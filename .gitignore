@@ -4,5 +4,7 @@ dist/
 .env
 data/*.sqlite
 data/*.sqlite-journal
+data/*.sqlite-shm
+data/*.sqlite-wal
 scratch/*
 !scratch/.gitkeep

@@ -1,4 +1,4 @@
-import { Telegram } from "telegraf";
+import { WebClient } from "@slack/web-api";
 import { config } from "../config/index.js";
 import { getDb, Jobs } from "../db/index.js";
 import { processJob } from "./pipeline.js";
@@ -9,7 +9,7 @@ function sleep(ms: number): Promise<void> {
 
 export async function startWorker(): Promise<void> {
   const db = getDb(config.worker.dbPath);
-  const telegram = new Telegram(config.telegram.botToken);
+  const slack = new WebClient(config.slack.botToken);
 
   const { requeued, failed } = Jobs.resetStuck(db, config.worker.stuckJobTimeoutMs);
   if (requeued || failed) {
@@ -36,7 +36,7 @@ export async function startWorker(): Promise<void> {
     }
 
     console.log(`Claimed job #${job.id}: ${job.taskDescription}`);
-    await processJob(job, { db, telegram });
+    await processJob(job, { db, slack });
     console.log(`Finished job #${job.id}`);
   }
 }

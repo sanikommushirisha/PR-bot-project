@@ -31,7 +31,7 @@ export async function cloneRepo(params: CloneParams): Promise<CloneResult> {
   ]);
 
   const git = simpleGit(dir);
-  await git.addConfig("user.name", "telegram-agent-bridge");
+  await git.addConfig("user.name", "slack-agent-bridge");
   await git.addConfig("user.email", "agent-bridge@users.noreply.github.com");
 
   return { git, dir };

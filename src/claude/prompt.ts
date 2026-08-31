@@ -8,7 +8,7 @@ export function buildTaskPrompt(ctx: TaskPromptContext): string {
   const lines = [
     "You are working inside a git checkout of a repository, on a fresh branch created for this task.",
     "",
-    `Task requested via Telegram by ${ctx.requestingUsername ?? "a user"}:`,
+    `Task requested via Slack by ${ctx.requestingUsername ?? "a user"}:`,
     '"""',
     ctx.taskDescription,
     '"""',

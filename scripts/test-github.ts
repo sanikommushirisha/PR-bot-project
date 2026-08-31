@@ -27,7 +27,7 @@ async function main() {
   const testFile = path.join(dir, "AGENT_BRIDGE_TEST.md");
   await writeFile(
     testFile,
-    `# telegram-agent-bridge test\n\nGenerated at ${new Date().toISOString()}. Safe to delete/close.\n`
+    `# slack-agent-bridge test\n\nGenerated at ${new Date().toISOString()}. Safe to delete/close.\n`
   );
 
   await commitAll(git, `test: verify github module (job ${jobId})`);
@@ -41,7 +41,7 @@ async function main() {
     repo: config.github.repo,
     base: config.github.baseBranch,
     head: branchName,
-    title: "[test] telegram-agent-bridge github module",
+    title: "[test] slack-agent-bridge github module",
     body: "Standalone test of the github module (clone, branch, commit, push, draft PR). Safe to close.",
   });
 

@@ -6,9 +6,8 @@ export interface Job {
   contextNote: string | null;
   requestingUserId: string;
   requestingUsername: string | null;
-  chatId: string;
-  messageId: string;
-  messageThreadId: string | null;
+  channelId: string;
+  threadTs: string | null;
   targetRepo: string;
   targetBaseBranch: string;
   status: JobStatus;
@@ -26,9 +25,7 @@ export interface CreateJobInput {
   contextNote?: string | null;
   requestingUserId: string;
   requestingUsername: string | null;
-  chatId: string;
-  messageId: string;
-  messageThreadId?: string | null;
+  channelId: string;
   targetRepo: string;
   targetBaseBranch: string;
 }

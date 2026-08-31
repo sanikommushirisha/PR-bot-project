@@ -1,4 +1,4 @@
-import type { Telegram } from "telegraf";
+import type { WebClient } from "@slack/web-api";
 import type Database from "better-sqlite3";
 import type { Job } from "../types/index.js";
 import { config } from "../config/index.js";
@@ -16,15 +16,15 @@ import {
   parseRepoSlug,
 } from "../github/index.js";
 import { runAgentTask } from "../claude/index.js";
-import { buildTelegramMessageLink } from "../telegram/links.js";
+import { buildSlackPermalink } from "../slack/index.js";
 
 export interface WorkerDeps {
   db: Database.Database;
-  telegram: Telegram;
+  slack: WebClient;
 }
 
 export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
-  const { db, telegram } = deps;
+  const { db, slack } = deps;
   const { owner, repo } = parseRepoSlug(job.targetRepo);
   let cloneDir: string | undefined;
 
@@ -71,15 +71,15 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
       base: job.targetBaseBranch,
       head: branchName,
       title: formatPrTitle(job),
-      body: formatPrBody(job, agentResult.summary),
+      body: await formatPrBody(slack, job, agentResult.summary),
     });
 
     Jobs.markCompleted(db, job.id, prUrl);
-    await notify(telegram, job, `✅ Job #${job.id} done — draft PR opened:\n${prUrl}`);
+    await notify(slack, job, `✅ Job #${job.id} done — draft PR opened:\n${prUrl}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     Jobs.markFailed(db, job.id, message);
-    await notify(telegram, job, `❌ Job #${job.id} failed: ${message}`);
+    await notify(slack, job, `❌ Job #${job.id} failed: ${message}`);
   } finally {
     if (cloneDir) {
       await cleanupClone(cloneDir);
@@ -87,27 +87,23 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
   }
 }
 
-async function notify(telegram: Telegram, job: Job, text: string): Promise<void> {
+async function notify(slack: WebClient, job: Job, text: string): Promise<void> {
   try {
-    if (job.messageThreadId !== null) {
-      await telegram.sendMessage(job.chatId, text, {
-        message_thread_id: Number(job.messageThreadId),
-      });
-    } else {
-      await telegram.sendMessage(job.chatId, text, {
-        reply_parameters: { message_id: Number(job.messageId) },
-      });
-    }
+    await slack.chat.postMessage({
+      channel: job.channelId,
+      thread_ts: job.threadTs ?? undefined,
+      text,
+    });
   } catch (err) {
-    console.error(`Failed to send Telegram notification for job #${job.id}:`, err);
+    console.error(`Failed to send Slack notification for job #${job.id}:`, err);
   }
 }
 
 function formatCommitMessage(job: Job): string {
   return [
-    `Automated change via telegram-agent-bridge (job #${job.id})`,
+    `Automated change via slack-agent-bridge (job #${job.id})`,
     "",
-    `Requested by ${job.requestingUsername ?? job.requestingUserId} in Telegram chat ${job.chatId}, message ${job.messageId}.`,
+    `Requested by ${job.requestingUsername ?? job.requestingUserId} in Slack channel ${job.channelId}.`,
     "",
     job.taskDescription,
   ].join("\n");
@@ -119,20 +115,17 @@ function formatPrTitle(job: Job): string {
   return `[agent] ${trimmed}`;
 }
 
-function formatPrBody(job: Job, agentSummary: string): string {
+async function formatPrBody(slack: WebClient, job: Job, agentSummary: string): Promise<string> {
   const lines = [
-    "## Requested via Telegram",
+    "## Requested via Slack",
     "",
     `> ${job.taskDescription}`,
     "",
     `Requested by: ${job.requestingUsername ?? job.requestingUserId}`,
   ];
 
-  const link = buildTelegramMessageLink(
-    job.chatId,
-    job.messageThreadId ?? job.messageId
-  );
-  if (link) lines.push(job.messageThreadId ? `Telegram thread: ${link}` : `Original message: ${link}`);
+  const link = job.threadTs ? await buildSlackPermalink(slack, job.channelId, job.threadTs) : null;
+  if (link) lines.push(`Slack thread: ${link}`);
 
   lines.push(
     "",
@@ -141,7 +134,7 @@ function formatPrBody(job: Job, agentSummary: string): string {
     agentSummary,
     "",
     "---",
-    `_Job #${job.id} — opened automatically by telegram-agent-bridge. This is a draft; review before merging._`
+    `_Job #${job.id} — opened automatically by slack-agent-bridge. This is a draft; review before merging._`
   );
 
   return lines.join("\n");

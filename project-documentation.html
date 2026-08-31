@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>telegram-agent-bridge — Project Documentation</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: light dark;
+    --ink:#1c1b1f;
+    --paper:#f7f4ee;
+    --paper-raised:#ffffff;
+    --rule:#ddd5c4;
+    --muted:#726c5e;
+    --accent:#af7422;
+    --accent-soft:#f0e2c8;
+    --thread:#2f5f7a;
+    --thread-soft:#dee9ee;
+    --good:#4f7942;
+    --good-soft:#e3ead9;
+    --bad:#a8402a;
+    --bad-soft:#f1ddd6;
+    --code-bg:#1b1c20;
+    --code-bar:#232429;
+    --code-line:#2d2e34;
+    --code-text:#e9e6dd;
+    --code-muted:#8b8a86;
+    --code-accent:#e0a94f;
+    --code-thread:#7fb2cf;
+    --font-display:'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+    --font-body:'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#eee9de;
+      --paper:#17181b;
+      --paper-raised:#1f2024;
+      --rule:#34353b;
+      --muted:#9a968a;
+      --accent:#e0a94f;
+      --accent-soft:#332813;
+      --thread:#7fb2cf;
+      --thread-soft:#1b2a30;
+      --good:#86b476;
+      --good-soft:#1d2519;
+      --bad:#e08a76;
+      --bad-soft:#2c1c17;
+    }
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    line-height:1.6;
+  }
+  img{ max-width:100%; }
+  h1,h2,h3{ font-family:var(--font-display); font-weight:600; letter-spacing:-0.01em; text-wrap:balance; }
+  ::selection{ background:var(--accent-soft); }
+  a{ color:var(--thread); }
+  a:focus-visible, button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  .wrap{ max-width:900px; margin:0 auto; padding:0 24px 96px; }
+  .wide{ max-width:100%; }
+
+  /* ---- Top bar ---- */
+  .topbar{
+    border-bottom:1px solid var(--rule); background:var(--paper-raised);
+    position:sticky; top:0; z-index:5;
+  }
+  .topbar-inner{
+    max-width:900px; margin:0 auto; padding:14px 24px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    font-family:var(--font-display); font-size:12.5px;
+  }
+  .topbar-inner b{ color:var(--ink); }
+  .topbar-inner .tag{ color:var(--muted); }
+  nav.toc{ display:flex; gap:16px; flex-wrap:wrap; }
+  nav.toc a{ color:var(--muted); text-decoration:none; }
+  nav.toc a:hover{ color:var(--accent); }
+
+  /* ---- Header ---- */
+  header.hero{ padding:56px 0 8px; }
+  .eyebrow{
+    font-family:var(--font-display); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); display:flex; align-items:center; gap:10px; margin-bottom:16px;
+  }
+  .eyebrow::before{ content:""; width:22px; height:1px; background:var(--accent); display:inline-block; }
+  h1{ font-size:clamp(28px,4.4vw,38px); line-height:1.15; margin:0 0 14px; }
+  .lede{ font-size:16.5px; color:var(--muted); max-width:66ch; margin:0 0 28px; }
+  .lede code{ color:var(--ink); }
+
+  .path{
+    display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+    font-family:var(--font-display); font-size:12px;
+    padding:14px 16px; border:1px solid var(--rule); border-radius:8px;
+    background:var(--paper-raised); color:var(--muted);
+  }
+  .path b{ color:var(--ink); font-weight:600; }
+  .path .arrow{ color:var(--accent); }
+
+  /* ---- At a glance ---- */
+  .glance{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:10px;
+    overflow:hidden; margin:36px 0 8px;
+  }
+  .glance div{ background:var(--paper-raised); padding:16px 18px; }
+  .glance .k{ display:block; font-family:var(--font-display); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .glance .v{ font-size:14px; font-weight:600; }
+  .glance .v.mono{ font-family:var(--font-mono); font-weight:500; font-size:12.5px; }
+
+  section{ margin-top:64px; scroll-margin-top:64px; }
+  h2{ font-size:22px; margin:0 0 6px; }
+  .sectionlede{ color:var(--muted); max-width:68ch; margin:0 0 24px; font-size:15px; }
+
+  /* ---- Diagram panel ---- */
+  .diagram{ border:1px solid var(--rule); border-radius:12px; background:var(--paper-raised); padding:22px; overflow-x:auto; margin-bottom:8px; }
+  .diagram .mermaid{ margin:0 auto; min-width:600px; width:max-content; }
+  .diagram-caption{ font-size:12.5px; color:var(--muted); margin-top:10px; }
+
+  /* ---- Stage list ---- */
+  .stages{ display:flex; flex-direction:column; border-top:1px solid var(--rule); }
+  .stage{ display:grid; grid-template-columns:56px 1fr; gap:18px; padding:22px 0; border-bottom:1px solid var(--rule); }
+  .stage .n{ font-family:var(--font-display); font-size:20px; color:var(--rule); font-weight:600; }
+  .stage.is-fail .n{ color:var(--bad); }
+  .stage h3{ font-size:16px; margin:0 0 4px; font-weight:600; }
+  .stage .file{ display:inline-block; font-family:var(--font-mono); font-size:11.5px; background:var(--thread-soft); color:var(--thread); padding:2px 7px; border-radius:5px; margin-bottom:8px; }
+  .stage p{ margin:0; color:var(--muted); font-size:14.5px; max-width:64ch; }
+  .stage p code{ font-family:var(--font-mono); font-size:.92em; color:var(--ink); background:var(--paper); padding:1px 5px; border-radius:4px; }
+
+  /* ---- Code panel ---- */
+  .codepanel{ border-radius:10px; overflow:hidden; border:1px solid var(--code-line); margin:18px 0; }
+  .codepanel__bar{ display:flex; align-items:center; gap:6px; padding:9px 14px; background:var(--code-bar); }
+  .codepanel__bar .dot{ width:8px; height:8px; border-radius:50%; background:var(--code-line); }
+  .codepanel__label{ margin-left:8px; font-family:var(--font-display); font-size:11px; letter-spacing:.05em; color:var(--code-muted); }
+  .codepanel pre{ margin:0; padding:18px 20px; background:var(--code-bg); color:var(--code-text); font-family:var(--font-mono); font-size:12.8px; line-height:1.7; overflow-x:auto; white-space:pre-wrap; word-break:break-word; }
+  .codepanel .ph{ color:var(--code-accent); font-weight:500; }
+  .codepanel .cmt{ color:var(--code-muted); }
+  .codepanel .lit{ color:var(--code-thread); }
+
+  /* ---- Callout ---- */
+  .callout{ border:1px solid var(--rule); border-left:3px solid var(--accent); background:var(--accent-soft); border-radius:0 10px 10px 0; padding:18px 20px; margin:20px 0; }
+  .callout.bad{ border-left-color:var(--bad); background:var(--bad-soft); }
+  .callout.good{ border-left-color:var(--good); background:var(--good-soft); }
+  .callout .t{ font-family:var(--font-display); font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink); margin-bottom:8px; display:block; }
+  .callout p{ margin:0 0 8px; font-size:14.5px; color:var(--ink); }
+  .callout p:last-child{ margin-bottom:0; }
+  .callout code{ font-family:var(--font-mono); font-size:.9em; background:var(--paper-raised); padding:1px 5px; border-radius:4px; }
+  .callout ul{ margin:8px 0 0; padding-left:20px; font-size:14.5px; }
+  .callout li{ margin-bottom:4px; }
+
+  /* ---- Table ---- */
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  th{ text-align:left; font-family:var(--font-display); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); padding:0 12px 10px 0; border-bottom:1px solid var(--rule); font-weight:600; white-space:nowrap; }
+  td{ padding:11px 12px 11px 0; border-bottom:1px solid var(--rule); vertical-align:top; }
+  td:first-child, th:first-child{ padding-left:0; }
+  td code, .mono{ font-family:var(--font-mono); font-size:12.5px; }
+  .tablewrap{ overflow-x:auto; margin-bottom:8px; }
+  tr:last-child td{ border-bottom:none; }
+
+  .pill{ display:inline-block; font-family:var(--font-display); font-size:10.5px; letter-spacing:.04em; padding:2px 8px; border-radius:999px; }
+  .pill.allow{ background:var(--good-soft); color:var(--good); }
+  .pill.deny{ background:var(--bad-soft); color:var(--bad); }
+  .pill.guard{ background:var(--accent-soft); color:var(--accent); }
+
+  footer{ margin-top:72px; padding-top:24px; border-top:1px solid var(--rule); font-size:12.5px; color:var(--muted); }
+  footer p{ max-width:70ch; }
+
+  @media (prefers-reduced-motion: reduce){ *{ scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <span><b>telegram-agent-bridge</b> <span class="tag">/ documentation</span></span>
+    <nav class="toc">
+      <a href="#architecture">Architecture</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#prompt">Prompt flow</a>
+      <a href="#commands">Commands</a>
+      <a href="#permissions">Permissions</a>
+      <a href="#lifecycle">Job lifecycle</a>
+      <a href="#reference">Reference</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Project documentation</div>
+    <h1>Telegram → Claude Agent → Draft Pull Request</h1>
+    <p class="lede">
+      <code>telegram-agent-bridge</code> lets an authorized Telegram chat request a code change in plain
+      English and get back a <b>draft</b> GitHub pull request. A Claude Agent SDK session does the coding;
+      every git and GitHub action around it — cloning, branching, committing, pushing, opening the PR — is
+      deterministic code, never something the model runs itself. Nothing merges automatically.
+    </p>
+    <div class="path">
+      <b>/task in Telegram</b><span class="arrow">→</span><b>SQLite job queue</b><span class="arrow">→</span><b>clone + branch</b><span class="arrow">→</span><b>Claude Agent SDK</b><span class="arrow">→</span><b>commit + push</b><span class="arrow">→</span><b>draft PR</b><span class="arrow">→</span><b>Telegram reply</b>
+    </div>
+
+    <div class="glance">
+      <div><span class="k">Language / runtime</span><span class="v">TypeScript · Node.js 20+</span></div>
+      <div><span class="k">Coding agent</span><span class="v mono">@anthropic-ai/claude-agent-sdk</span></div>
+      <div><span class="k">Model</span><span class="v">SDK default (no override pinned)</span></div>
+      <div><span class="k">Chat interface</span><span class="v mono">telegraf</span> (Telegram Bot API)</div>
+      <div><span class="k">Source control</span><span class="v mono">simple-git</span> + <span class="v mono">@octokit/rest</span></div>
+      <div><span class="k">Job store</span><span class="v mono">better-sqlite3</span> (WAL mode)</div>
+      <div><span class="k">API server</span><span class="v mono">fastify</span></div>
+      <div><span class="k">Config validation</span><span class="v mono">zod</span></div>
+      <div><span class="k">Process manager</span><span class="v">PM2, 2 apps</span></div>
+      <div><span class="k">PR type</span><span class="v">Always draft, never auto-merged</span></div>
+    </div>
+  </header>
+
+  <section id="architecture">
+    <h2>Architecture</h2>
+    <p class="sectionlede">Two independent long-running processes share one SQLite database — no message broker, no external queue.</p>
+
+    <div class="diagram wide">
+      <pre class="mermaid">
+flowchart LR
+    subgraph P1["Process 1 — bot + API  (src/index.ts)"]
+      TG["Telegraf bot\nlong polling"]
+      API["Fastify API\nGET /health\nGET /jobs/:id"]
+    end
+    subgraph P2["Process 2 — worker  (src/worker.ts)"]
+      POLL["Poll loop\nevery JOB_POLL_INTERVAL_MS"]
+      PIPE["processJob()\nclone → agent → commit → PR"]
+    end
+    DB[("SQLite\njobs table\nWAL mode")]
+    TELE(["Telegram"])
+    GH(["GitHub API"])
+    AI(["Anthropic API"])
+
+    TELE <--> TG
+    TG -- "insert job" --> DB
+    API -- "read job" --> DB
+    DB -- "claim pending job" --> POLL
+    POLL --> PIPE
+    PIPE <--> GH
+    PIPE <--> AI
+    PIPE -- "update status" --> DB
+    PIPE -- "reply" --> TELE
+      </pre>
+    </div>
+    <p class="diagram-caption">Both processes are started by PM2 (<code>ecosystem.config.cjs</code>) as <code>telegram-agent-bridge-bot</code> and <code>telegram-agent-bridge-worker</code>. Long polling means no public HTTPS endpoint is required for Telegram.</p>
+  </section>
+
+  <section id="pipeline">
+    <h2>End-to-end pipeline</h2>
+    <p class="sectionlede">The literal path a single <code>/task</code> request takes, including the idempotency check that protects against Telegram's at-least-once delivery and the guardrail that stops a job before anything is pushed.</p>
+
+    <div class="diagram wide">
+      <pre class="mermaid">
+flowchart TD
+    A["/task &lt;description&gt;\nin the allowed chat"] --> B{"Already have a job\nfor this chat+message?"}
+    B -- "yes (redelivery)" --> Z["Ignore — no duplicate job"]
+    B -- no --> C["Open a Telegram topic for the job\nInsert row, status = pending"]
+    C --> D["Worker poll loop\natomically claims oldest pending job"]
+    D --> E["Clone target repo at base branch\n(shallow, depth 50)"]
+    E --> F["Create branch\nagent/&lt;slug-of-task&gt;-&lt;job id&gt;"]
+    F --> G["Claude Agent SDK query()\nsystem prompt + per-job task prompt\nRead / Edit / Write / Glob / Grep + guarded Bash"]
+    G --> H{"Agent succeeded\nAND changed files?"}
+    H -- no --> I["Mark job failed\nreply ❌ in Telegram"]
+    H -- yes --> J["git add -A && git commit"]
+    J --> K["git push origin &lt;branch&gt;"]
+    K --> L["Open DRAFT pull request\nvia GitHub API"]
+    L --> M["Mark job completed\nreply ✅ + PR link in Telegram"]
+    I --> N["Delete the local clone"]
+    M --> N
+      </pre>
+    </div>
+    <p class="diagram-caption">Claude's entire contribution is the single "Agent" box. Everything before and after it — cloning, branching, committing, pushing, opening the PR — is plain deterministic TypeScript.</p>
+
+    <div class="stages">
+      <div class="stage">
+        <div class="n">01</div>
+        <div>
+          <span class="file">src/telegram/bot.ts</span>
+          <h3>Intake &amp; idempotency</h3>
+          <p>Only <code>TELEGRAM_ALLOWED_CHAT_ID</code> can create jobs, and only via the explicit <code>/task</code> command — no message is ever treated as a task implicitly. Telegram long-polling delivers updates at-least-once, so before inserting anything the bot checks for an existing job with the same <code>(chat_id, message_id)</code>; a unique index on that pair makes the insert itself idempotent as a second line of defense against a race. If the message replied to another one, that message's text is captured as <code>contextNote</code>.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="n">02</div>
+        <div>
+          <span class="file">src/worker/poll.ts · src/db/jobs.ts</span>
+          <h3>Queue &amp; claim</h3>
+          <p>A worker loop polls the database every <code>JOB_POLL_INTERVAL_MS</code>. Claiming a job is one atomic <code>UPDATE jobs SET status='running' … WHERE status='pending'</code>, so it's safe even if more than one worker process were ever run.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="n">03</div>
+        <div>
+          <span class="file">src/github/repo.ts</span>
+          <h3>Workspace setup</h3>
+          <p>The target repo is cloned fresh into a scratch directory at the job's base branch, then a new branch is checked out: <code>agent/&lt;slugified-task&gt;-&lt;job id&gt;</code>.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="n">04</div>
+        <div>
+          <span class="file">src/claude/session.ts · src/claude/prompt.ts · src/claude/security.ts</span>
+          <h3>Agent run — this is where Claude writes code</h3>
+          <p>The Claude Agent SDK's <code>query()</code> runs against the cloned working directory with a system prompt and a per-job task prompt (full text in <a href="#prompt">Prompt flow</a>). Every <code>Bash</code> call is checked against a denylist before it runs (see <a href="#permissions">Permissions</a>).</p>
+        </div>
+      </div>
+      <div class="stage is-fail">
+        <div class="n">05</div>
+        <div>
+          <span class="file">src/worker/pipeline.ts</span>
+          <h3>Guardrail check</h3>
+          <p>Two conditions fail the job before anything is pushed: the agent run reporting <code>is_error</code>, or the agent finishing with a clean working tree (no files changed). Either way, nothing gets committed.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="n">06</div>
+        <div>
+          <span class="file">src/github/repo.ts</span>
+          <h3>Commit &amp; push</h3>
+          <p><code>git add -A</code> plus a commit message naming the job number, requester, and Telegram origin — then <code>git push -u origin &lt;branch&gt;</code>.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="n">07</div>
+        <div>
+          <span class="file">src/github/pr.ts</span>
+          <h3>Open the pull request</h3>
+          <p><code>octokit.pulls.create</code> with <code>draft: true</code>. Title is <code>[agent] &lt;task, truncated to 72 chars&gt;</code>; the body quotes the original task, names the requester, links back to the Telegram thread, and includes the agent's own closing summary.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="n">08</div>
+        <div>
+          <span class="file">src/worker/pipeline.ts</span>
+          <h3>Notify &amp; clean up</h3>
+          <p>The job row is marked <code>completed</code> with the PR URL, a ✅ reply with the link goes into the Telegram topic, and the local clone directory is deleted — win or lose, cleanup always runs in a <code>finally</code> block.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="prompt">
+    <h2>Prompt flow: input → output</h2>
+    <p class="sectionlede">How a sentence typed into Telegram becomes the text Claude actually reads, and how Claude's output becomes the PR body.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Step</th><th>Data</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Input</td><td>Raw Telegram message text after <code>/task</code>, plus the replied-to message's text if any</td><td class="mono">bot.ts</td></tr>
+          <tr><td>Shaped into</td><td class="mono">TaskPromptContext { taskDescription, requestingUsername, chatContextNote }</td><td class="mono">prompt.ts</td></tr>
+          <tr><td>Rendered to</td><td>A single plain-text prompt string (shown below)</td><td class="mono">buildTaskPrompt()</td></tr>
+          <tr><td>Sent to model as</td><td><code>prompt</code> argument of <code>query()</code>, alongside a fixed system prompt</td><td class="mono">session.ts</td></tr>
+          <tr><td>Model acts via</td><td>Tool calls only — Read / Edit / Write / Glob / Grep / guarded Bash — inside the cloned working directory</td><td class="mono">Claude Agent SDK</td></tr>
+          <tr><td>Output captured</td><td>The final <code>result</code> message's <code>.result</code> text (or <code>.errors</code> on failure), plus turn count and cost</td><td class="mono">session.ts</td></tr>
+          <tr><td>Output used as</td><td>The "Agent summary" section of the pull request body</td><td class="mono">pipeline.ts → formatPrBody()</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="codepanel">
+      <div class="codepanel__bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="codepanel__label">system prompt — appended to the Claude Code preset, fixed for every job</span></div>
+      <pre>You are running unattended as part of an automated Telegram-to-PR pipeline.
+Never run git commit, git push, or open a pull request yourself — a separate
+deterministic process handles all git/GitHub actions after you finish.</pre>
+    </div>
+
+    <div class="codepanel">
+      <div class="codepanel__bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="codepanel__label">task prompt — built fresh per job by buildTaskPrompt()</span></div>
+      <pre>You are working inside a git checkout of a repository, on a fresh branch created for this task.
+
+Task requested via Telegram by <span class="ph">{requestingUsername ?? "a user"}</span>:
+"""
+<span class="ph">{taskDescription}</span>
+"""
+
+<span class="cmt">— block below only appears when /task replied to another message —</span>
+Additional context (the message this request was replied to):
+<span class="ph">{chatContextNote}</span>
+
+Instructions:
+- Make the code changes needed to complete the task.
+- Run any available tests and linters for the parts of the codebase you touched, and fix failures you introduce.
+- Do NOT run `git commit`, `git push`, or create a pull request. Leave your changes uncommitted
+  in the working tree — a separate deterministic process handles all git and GitHub operations
+  after you finish.
+- Do NOT modify git config or remotes, and do NOT switch branches.
+- When you are done, give a concise final summary of what you changed and why.</pre>
+    </div>
+
+    <div class="callout">
+      <span class="t">Session settings that shape the run</span>
+      <ul>
+        <li><code>cwd</code> — the freshly cloned repo directory, so file paths in tool calls are always relative to that checkout.</li>
+        <li><code>permissionMode: "acceptEdits"</code> — file edits proceed without a human approving each one (this runs unattended).</li>
+        <li><code>maxTurns: 40</code> (default, overridable per call) — a hard ceiling on back-and-forth turns.</li>
+        <li><code>env</code> — the worker's environment plus <code>ANTHROPIC_API_KEY</code>, so the session can authenticate.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="commands">
+    <h2>Commands</h2>
+    <p class="sectionlede">Three distinct command surfaces: what a person types in Telegram, what the agent is allowed to run inside the repo, and what an operator runs on the server.</p>
+
+    <h3 style="font-size:15px;margin:0 0 10px;">Telegram bot commands <span class="mono" style="font-weight:400;color:var(--muted);font-size:12px;">(src/telegram/bot.ts — only in <code>TELEGRAM_ALLOWED_CHAT_ID</code>)</span></h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">/task &lt;description&gt;</td><td>Queues a new job. Creates a dedicated Telegram topic for it (when the chat supports forum topics), inserts a <code>pending</code> row, and acknowledges with the job id. Deduplicated against message redelivery.</td></tr>
+          <tr><td class="mono">/status</td><td>Lists every job currently <code>pending</code> or <code>running</code>, with counts of each and a truncated task description per job.</td></tr>
+          <tr><td class="mono">/cancel &lt;job id&gt;</td><td>Cancels a job only while it is still <code>pending</code> (marks it <code>failed</code> with reason "Cancelled by user"). A job already <code>running</code> can't be interrupted mid-flight — it finishes or fails on its own.</td></tr>
+          <tr><td class="mono">/help</td><td>Prints the command list above.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:15px;margin:28px 0 10px;">Operator commands <span class="mono" style="font-weight:400;color:var(--muted);font-size:12px;">(package.json / PM2)</span></h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">pnpm dev:bot</td><td>Runs <code>src/index.ts</code> with <code>tsx watch</code> — the Telegram bot + Fastify API, for local development.</td></tr>
+          <tr><td class="mono">pnpm dev:worker</td><td>Runs <code>src/worker.ts</code> with <code>tsx watch</code> — the job worker, for local development.</td></tr>
+          <tr><td class="mono">pnpm build</td><td>Compiles <code>src/</code> to <code>dist/</code> with the TypeScript compiler.</td></tr>
+          <tr><td class="mono">pnpm start:bot</td><td>Runs the compiled bot+API from <code>dist/index.js</code> (production).</td></tr>
+          <tr><td class="mono">pnpm start:worker</td><td>Runs the compiled worker from <code>dist/worker.js</code> (production).</td></tr>
+          <tr><td class="mono">pnpm typecheck</td><td>Type-checks the project without emitting output.</td></tr>
+          <tr><td class="mono">pnpm test:github</td><td>Standalone check: clones <code>GITHUB_REPO</code>, makes a trivial commit, pushes, opens a real draft PR — exercises the GitHub module in isolation.</td></tr>
+          <tr><td class="mono">pnpm test:claude -- &lt;path&gt; "&lt;task&gt;"</td><td>Standalone check: runs a Claude Agent SDK session against a local repo checkout you point it at — exercises the agent module in isolation.</td></tr>
+          <tr><td class="mono">pm2 start ecosystem.config.cjs</td><td>Starts both production processes (<code>telegram-agent-bridge-bot</code>, <code>telegram-agent-bridge-worker</code>).</td></tr>
+          <tr><td class="mono">pm2 logs telegram-agent-bridge-worker</td><td>Tails worker logs — where per-job clone/agent/PR activity is printed.</td></tr>
+          <tr><td class="mono">pm2 restart telegram-agent-bridge-bot</td><td>Restarts just the bot+API process without touching the worker.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="permissions">
+    <h2>What the agent is allowed to run</h2>
+    <p class="sectionlede">Inside a job, Claude operates under a fixed tool allowlist plus a Bash-specific denylist — not a sandbox, but a real check where otherwise none exists.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Access</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Read / Glob / Grep</td><td><span class="pill allow">allowed</span></td><td>Unrestricted read access inside the cloned repo.</td></tr>
+          <tr><td class="mono">Edit / Write</td><td><span class="pill allow">allowed</span></td><td>File edits apply immediately (<code>permissionMode: "acceptEdits"</code>) — no per-edit confirmation, since the session is unattended.</td></tr>
+          <tr><td class="mono">Bash</td><td><span class="pill guard">guarded</span></td><td>Not in the static allowlist — every invocation is routed through <code>canUseTool</code> and checked against the denylist below. Anything not matched is allowed, so this is a denylist, not a sandbox.</td></tr>
+          <tr><td class="mono">git commit / push / PR</td><td><span class="pill deny">never available</span></td><td>No tool exposes these to the model at all; they're performed by <code>pipeline.ts</code> after the session ends.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:15px;margin:28px 0 10px;">Bash denylist <span class="mono" style="font-weight:400;color:var(--muted);font-size:12px;">(src/claude/security.ts)</span></h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Category</th><th>Blocked examples</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td>Destructive filesystem</td><td class="mono">rm -rf /, ~, $HOME, ..</td><td>Destructive filesystem operation</td></tr>
+          <tr><td>Privilege escalation</td><td class="mono">sudo …</td><td>Privilege escalation</td></tr>
+          <tr><td>Remote script execution</td><td class="mono">curl … | sh, wget … | bash</td><td>Piping a remote script into a shell</td></tr>
+          <tr><td>Permissions / disk / power</td><td class="mono">chmod 777, mkfs, dd if=, shutdown/reboot/poweroff/halt</td><td>Overly permissive, destructive, or host-affecting</td></tr>
+          <tr><td>Git boundaries</td><td class="mono">git push, git config, git remote</td><td>The worker pushes deterministically; the agent must never push, or touch git identity/remotes</td></tr>
+          <tr><td>Credential access</td><td class="mono">~/.ssh/id_*, ~/.aws/credentials, cat/head/tail a .env file</td><td>Reading SSH/AWS/.env credentials</td></tr>
+          <tr><td>Denial of service</td><td class="mono">:(){ :|:&amp; };:</td><td>Fork bomb</td></tr>
+          <tr><td>Database / migrations</td><td class="mono">supabase …, prisma migrate, drizzle-kit push, knex migrate, rails/rake db:migrate, manage.py migrate, alembic upgrade/downgrade, typeorm migration:run/revert, sequelize db:migrate, flyway migrate, liquibase update</td><td>This pipeline must never touch real data or schema</td></tr>
+          <tr><td>Direct DB clients</td><td class="mono">psql, pg_dump/restore, mysql, mongosh/mongo, redis-cli</td><td>Direct database access</td></tr>
+          <tr><td>Secret exfiltration</td><td class="mono">echo/printenv of DATABASE_URL, SUPABASE_*KEY, POSTGRES_*, DB_PASSWORD; env | grep SECRET/DATABASE_URL/…</td><td>Reading or dumping credential env vars</td></tr>
+          <tr><td>Admin API calls</td><td class="mono">curl/wget containing service_role</td><td>Authenticated Supabase admin API call</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="diagram-caption">A matched command is denied with an explanation returned to the model instead of run; the agent is told to explain in its final summary if the task genuinely needed it, rather than retry around the block.</p>
+
+    <div class="callout good">
+      <span class="t">Why the agent never touches git or GitHub directly</span>
+      <p>The system prompt and task prompt both tell Claude the same thing; the tool allowlist backs it up (no push/PR-creation tool exists to call); and the Bash denylist explicitly blocks <code>git push</code>/<code>git config</code>/<code>git remote</code> as a third, independent layer. The actual commit, push, and PR creation happen afterward in <code>pipeline.ts</code>, driven by the requester's task text and the agent's own summary — never by anything the model executed.</p>
+    </div>
+  </section>
+
+  <section id="lifecycle">
+    <h2>Job lifecycle &amp; data model</h2>
+    <p class="sectionlede">Every job is one row in a SQLite <code>jobs</code> table. Status only ever moves forward, except for the crash-recovery requeue.</p>
+
+    <div class="diagram wide">
+      <pre class="mermaid">
+stateDiagram-v2
+    [*] --> pending: /task received (deduped by chat+message id)
+    pending --> running: worker atomically claims it
+    pending --> failed: /cancel (only while still pending)
+    running --> completed: agent made changes, commit+push+PR succeeded
+    running --> failed: agent error, no changes, or push/PR failure
+    running --> pending: worker crashed mid-job (stuck &gt; STUCK_JOB_TIMEOUT_MS), attempts &lt; 3
+    running --> failed: stuck &amp; requeued 3 times already
+    completed --> [*]
+    failed --> [*]
+      </pre>
+    </div>
+    <p class="diagram-caption">The crash-recovery check runs once at worker startup (<code>Jobs.resetStuck</code>): any job still <code>running</code> past the timeout is assumed orphaned by a dead worker process.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Column</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">task_description</td><td>The text after <code>/task</code> — becomes the prompt body and PR title/body.</td></tr>
+          <tr><td class="mono">context_note</td><td>Text of the message <code>/task</code> replied to, if any.</td></tr>
+          <tr><td class="mono">requesting_user_id / requesting_username</td><td>Who asked — recorded in the commit message and PR body.</td></tr>
+          <tr><td class="mono">chat_id / message_id / message_thread_id</td><td>Where to reply; also the uniqueness key that prevents duplicate jobs from redelivered updates.</td></tr>
+          <tr><td class="mono">target_repo / target_base_branch</td><td>Which repo and base branch to clone (currently always <code>GITHUB_REPO</code> / <code>GITHUB_BASE_BRANCH</code>).</td></tr>
+          <tr><td class="mono">status</td><td><code>pending | running | completed | failed</code>, enforced by a <code>CHECK</code> constraint.</td></tr>
+          <tr><td class="mono">branch_name / pr_url / error_message</td><td>Filled in as the job progresses.</td></tr>
+          <tr><td class="mono">attempts</td><td>Incremented on every claim; caps stuck-job recovery at 3 retries.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="reference">
+    <h2>Reference</h2>
+
+    <h3 style="font-size:15px;margin:0 0 10px;">Environment variables</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Variable</th><th>Required</th><th>Default</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">TELEGRAM_BOT_TOKEN</td><td>yes</td><td>—</td><td>Token from BotFather</td></tr>
+          <tr><td class="mono">TELEGRAM_ALLOWED_CHAT_ID</td><td>yes</td><td>—</td><td>Only this chat's <code>/task</code> commands are accepted</td></tr>
+          <tr><td class="mono">GITHUB_TOKEN</td><td>yes</td><td>—</td><td>PAT with <code>repo</code> scope</td></tr>
+          <tr><td class="mono">GITHUB_REPO</td><td>yes</td><td>—</td><td>Target repo, <code>owner/repo</code></td></tr>
+          <tr><td class="mono">GITHUB_BASE_BRANCH</td><td>no</td><td><code>main</code></td><td>Base branch for draft PRs</td></tr>
+          <tr><td class="mono">ANTHROPIC_API_KEY</td><td>yes</td><td>—</td><td>Used by the Claude Agent SDK</td></tr>
+          <tr><td class="mono">SCRATCH_DIR</td><td>no</td><td><code>./scratch</code></td><td>Where repos get cloned per-job</td></tr>
+          <tr><td class="mono">DB_PATH</td><td>no</td><td><code>./data/jobs.sqlite</code></td><td>SQLite file path</td></tr>
+          <tr><td class="mono">JOB_POLL_INTERVAL_MS</td><td>no</td><td><code>7000</code></td><td>Worker poll interval</td></tr>
+          <tr><td class="mono">STUCK_JOB_TIMEOUT_MS</td><td>no</td><td><code>1800000</code> (30 min)</td><td>How long a job can sit <code>running</code> before it's assumed crashed</td></tr>
+          <tr><td class="mono">PORT</td><td>no</td><td><code>3000</code></td><td>Fastify API port</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:15px;margin:28px 0 10px;">File map</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Area</th><th>File</th><th>Key export</th></tr></thead>
+        <tbody>
+          <tr><td>Telegram commands</td><td class="mono">src/telegram/bot.ts</td><td class="mono">createBot</td></tr>
+          <tr><td>Job storage</td><td class="mono">src/db/jobs.ts</td><td class="mono">Jobs.create / claimNextPending / listActive / cancelPending</td></tr>
+          <tr><td>Schema</td><td class="mono">src/db/schema.ts</td><td class="mono">SCHEMA_SQL</td></tr>
+          <tr><td>Poll loop</td><td class="mono">src/worker/poll.ts</td><td class="mono">startWorker</td></tr>
+          <tr><td>Orchestration</td><td class="mono">src/worker/pipeline.ts</td><td class="mono">processJob</td></tr>
+          <tr><td>Clone / branch / push</td><td class="mono">src/github/repo.ts</td><td class="mono">cloneRepo, createBranch, pushBranch</td></tr>
+          <tr><td>PR creation</td><td class="mono">src/github/pr.ts</td><td class="mono">createDraftPullRequest</td></tr>
+          <tr><td>Prompt text</td><td class="mono">src/claude/prompt.ts</td><td class="mono">buildTaskPrompt</td></tr>
+          <tr><td>Agent invocation</td><td class="mono">src/claude/session.ts</td><td class="mono">runAgentTask</td></tr>
+          <tr><td>Bash guardrail</td><td class="mono">src/claude/security.ts</td><td class="mono">guardBashTool</td></tr>
+          <tr><td>Config</td><td class="mono">src/config/index.ts</td><td class="mono">config</td></tr>
+          <tr><td>Bot + API entrypoint</td><td class="mono">src/index.ts</td><td>—</td></tr>
+          <tr><td>Worker entrypoint</td><td class="mono">src/worker.ts</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>No <code>model</code> field is set on the <code>query()</code> call in <code>src/claude/session.ts</code>, so jobs run on the Claude Agent SDK's default model rather than a pinned one. To fix a specific model, add <code>model: "claude-sonnet-5"</code> (or another model id) inside the <code>options</code> object there.</p>
+    <p>Generated as static project documentation — regenerate by re-reading the files above if the pipeline changes.</p>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  (function () {
+    var isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: isDark ? 'dark' : 'base',
+      securityLevel: 'loose',
+      themeVariables: isDark ? {
+        background: '#17181b',
+        primaryColor: '#1f2024',
+        primaryTextColor: '#eee9de',
+        primaryBorderColor: '#34353b',
+        lineColor: '#9a968a',
+        secondaryColor: '#1b2a30',
+        tertiaryColor: '#332813'
+      } : {
+        background: '#ffffff',
+        primaryColor: '#f0e2c8',
+        primaryTextColor: '#1c1b1f',
+        primaryBorderColor: '#af7422',
+        lineColor: '#726c5e',
+        secondaryColor: '#dee9ee',
+        tertiaryColor: '#e3ead9',
+        fontFamily: 'IBM Plex Mono, monospace'
+      }
+    });
+  })();
+</script>
+</body>
+</html>

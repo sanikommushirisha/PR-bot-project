@@ -19,6 +19,9 @@ no database — Linear itself is the state store.
    PR back into `develop`.
 4. The issue moves to `In Review` (success) or `Canceled` (failure), and a
    message posts back into the original Slack thread either way.
+5. If someone posts an image (pasted or attached) as a reply in that same
+   Slack thread, it's uploaded to Linear and embedded inline in the issue's
+   description — see "Images from Slack" below.
 
 ## Architecture
 
@@ -26,15 +29,69 @@ no database — Linear itself is the state store.
 src/
   config/       env validation (zod) + SDK client factories (Slack, Linear, GitHub)
   middlewares/  raw-body capture + Slack/Linear HMAC signature verification
-  webhooks/     Express controllers: POST /webhooks/slack/commands, POST /webhooks/linear
-  services/     slackService, linearService, githubService, claudeService (+ Bash guardrails)
+  webhooks/     Express controllers: POST /webhooks/slack/commands, POST /webhooks/slack/events, POST /webhooks/linear
+  services/     slackService, slackFileService, linearService, linearAssetService, githubService, claudeService (+ Bash guardrails)
+  auth/         JWT login — POST /api/auth/login, requireAuth middleware
+  dashboard/    GET /api/dashboard — job/PR status as JSON (dashboardService, dashboardRoute)
   types/        Slack slash-command payload, Linear webhook payload
   index.ts      Express app entrypoint
+apps/
+  dashboard-web/  standalone React/Vite frontend for the dashboard (its own package)
 ```
 
-One process, one port. No queue, no polling loop, no SQLite — every
-transition is driven by an inbound webhook, and Linear's own issue
-description is the only place any cross-request state lives.
+One process, one port for the backend. No queue, no polling loop for the
+Slack/Linear flow itself — every transition there is driven by an inbound
+webhook, and Linear's own issue description is the only place any
+cross-request state lives for it. The dashboard is the one part of this repo
+that does keep local state (the `jobs` SQLite table) and is polled by the
+frontend rather than pushed to.
+
+## Dashboard
+
+Two pieces:
+
+- **Backend API** (this package) — `POST /api/auth/login` (hardcoded
+  `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD` from `.env`, returns a 12h JWT)
+  and `GET /api/dashboard` (requires `Authorization: Bearer <token>`,
+  returns the job list as JSON). CORS on `/api/*` is restricted to the
+  origins listed in `DASHBOARD_CORS_ORIGINS`.
+- **Frontend** (`apps/dashboard-web/`) — a separate Vite/React app with a
+  login screen and the actual board. Run it locally with `pnpm dev:web`
+  (needs `apps/dashboard-web/.env` with `VITE_API_BASE_URL` pointed at this
+  backend), or deploy it to Vercel — see `apps/dashboard-web/README.md`.
+
+Jobs are grouped by whose move it is:
+
+- **Your move** — a completed job's PR is still a draft (preview it, then
+  mark ready), a required check is failing, there's a merge conflict, a
+  reviewer requested changes, the PR is approved and ready to merge, or the
+  job itself failed and needs a retry/dismiss decision.
+- **Waiting on reviewers** — PR is open, not draft, no blockers — just
+  needs a human reviewer's first pass.
+- **Automated** — job is queued or the agent is actively drafting. Nothing
+  to do.
+- **Downstream** — PR merged, awaiting release.
+
+Job status comes from the local queue; PR draft/review/check status is
+looked up live from GitHub on every request (so it can drift by up to the
+frontend's 60s poll interval).
+
+## Images from Slack
+
+A slash command can't carry a file, so this doesn't work by attaching an
+image to `/task` itself. Instead: run `/task`, then **paste or attach an
+image as a reply in that same thread**. The server correlates the thread
+back to the Linear issue `/task` created (`slack_threads` table — the one
+piece of local state this flow keeps, since that link doesn't exist yet at
+the point a job would normally provide it), downloads the image with the
+bot token, uploads it to Linear's asset storage, and appends it as an inline
+markdown image in the issue's description. A confirmation reply lands in
+the Slack thread either way (success or failure).
+
+This only works for images posted in a thread `/task` started — anything
+else in the channel is ignored. It also only gets the image *into* Linear;
+the agent itself still only reads text (title/description/comments), so it
+doesn't "see" the picture, just a markdown link to it in the description.
 
 ## Prerequisites
 
@@ -69,14 +126,21 @@ is the standard shape.
 1. Create an app at [api.slack.com/apps](https://api.slack.com/apps).
 2. **Basic Information → App Credentials** — copy the **Signing Secret**,
    this is `SLACK_SIGNING_SECRET`.
-3. **OAuth & Permissions → Bot Token Scopes** — add `chat:write`. Install the
+3. **OAuth & Permissions → Bot Token Scopes** — add `chat:write`, `channels:history`
+   (needed to receive message events for the image-forwarding feature below),
+   and `files:read` (needed to download an image someone posts). Install the
    app and copy the **Bot User OAuth Token** (`xoxb-...`) — this is
    `SLACK_BOT_TOKEN`. If you add scopes after already installing, reinstall
    and copy the newly issued token.
 4. **Slash Commands → Create New Command**:
    - Command: `/task`
    - Request URL: `https://<your-public-url>/webhooks/slack/commands`
-5. Invite the bot to your channel (`/invite @your-bot`), then find the
+5. **Event Subscriptions** — turn on, set Request URL to
+   `https://<your-public-url>/webhooks/slack/events` (Slack calls this
+   immediately to verify it — the server handles the handshake, so it should
+   show "Verified" right away). Under **Subscribe to bot events**, add
+   `message.channels`.
+6. Invite the bot to your channel (`/invite @your-bot`), then find the
    channel id (channel details, or the end of its URL) — that's
    `SLACK_ALLOWED_CHANNEL_ID`.
 
@@ -113,6 +177,10 @@ See `.env.example`.
 | `ANTHROPIC_API_KEY` | yes | Used by the Claude Agent SDK |
 | `SCRATCH_DIR` | no (default `./scratch`) | Where the repo gets cloned per run |
 | `PORT` | no (default `3000`) | Express server port |
+| `DASHBOARD_USERNAME` | yes | Login username for the dashboard |
+| `DASHBOARD_PASSWORD` | yes | Login password for the dashboard |
+| `DASHBOARD_JWT_SECRET` | yes | Signing key for dashboard login tokens |
+| `DASHBOARD_CORS_ORIGINS` | yes | Comma-separated origins allowed to call `/api/*` (the dashboard frontend's URL(s)) |
 
 ## Running locally
 

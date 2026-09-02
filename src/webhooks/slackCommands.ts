@@ -3,66 +3,72 @@ import type Database from "better-sqlite3";
 import { config } from "../config/env.js";
 import { createTaskIssue, moveIssueToStateName } from "../services/linearService.js";
 import { postSlackMessage, updateSlackMessage } from "../services/slackService.js";
-import { ReviewState } from "../db/index.js";
+import { ReviewState, SlackThreads } from "../db/index.js";
 import type { SlackSlashCommandPayload } from "../types/slack.js";
 
-export async function handleSlackTaskCommand(req: Request, res: Response): Promise<void> {
-  const body = req.body as SlackSlashCommandPayload;
+export function createTaskCommandHandler(db: Database.Database) {
+  return async function handleSlackTaskCommand(req: Request, res: Response): Promise<void> {
+    const body = req.body as SlackSlashCommandPayload;
 
-  // Ack immediately — Slack requires a response within 3 seconds. Everything
-  // below runs as a background continuation after this returns.
-  res.status(200).send();
+    // Ack immediately — Slack requires a response within 3 seconds. Everything
+    // below runs as a background continuation after this returns.
+    res.status(200).send();
 
-  if (body.channel_id !== config.slack.allowedChannelId) {
-    console.warn(
-      `Ignored ${body.command} from channel ${body.channel_id} (configured SLACK_ALLOWED_CHANNEL_ID is ${config.slack.allowedChannelId}).`
-    );
-    return;
-  }
-
-  const taskDescription = body.text?.trim();
-  if (!taskDescription) {
-    await postSlackMessage(
-      body.channel_id,
-      `Usage: ${body.command} <description of what you want done>`,
-      body.thread_ts
-    );
-    return;
-  }
-
-  try {
-    // Post first so we have a message ts to both thread future updates under
-    // and embed into the Linear issue as the back-reference to this thread.
-    const placeholderTs = await postSlackMessage(
-      body.channel_id,
-      `Registering task: "${taskDescription}"...`,
-      body.thread_ts
-    );
-
-    if (!placeholderTs) {
-      console.error("Slack postMessage did not return a ts — cannot register a task without a thread anchor.");
+    if (body.channel_id !== config.slack.allowedChannelId) {
+      console.warn(
+        `Ignored ${body.command} from channel ${body.channel_id} (configured SLACK_ALLOWED_CHANNEL_ID is ${config.slack.allowedChannelId}).`
+      );
       return;
     }
 
-    const issue = await createTaskIssue({
-      taskDescription,
-      requestingUsername: body.user_name ?? null,
-      slackMeta: { channelId: body.channel_id, threadTs: placeholderTs },
-    });
+    const taskDescription = body.text?.trim();
+    if (!taskDescription) {
+      await postSlackMessage(
+        body.channel_id,
+        `Usage: ${body.command} <description of what you want done>`,
+        body.thread_ts
+      );
+      return;
+    }
 
-    await updateSlackMessage(
-      body.channel_id,
-      placeholderTs,
-      `📝 Task registered as *${issue.identifier}* in Linear:\n> ${taskDescription}\nMove it to "*${config.linear.triggerStateName}*" in Linear when you want the agent to start working on it. <${issue.url}|View in Linear>`
-    );
-  } catch (err) {
-    console.error("Failed to register Slack task as a Linear issue:", err);
-    await postSlackMessage(
-      body.channel_id,
-      `❌ Failed to register task: ${err instanceof Error ? err.message : String(err)}`,
-      body.thread_ts
-    ).catch(() => {});
-  }
+    try {
+      // Post first so we have a message ts to both thread future updates under
+      // and embed into the Linear issue as the back-reference to this thread.
+      const placeholderTs = await postSlackMessage(
+        body.channel_id,
+        `Registering task: "${taskDescription}"...`,
+        body.thread_ts
+      );
+
+      if (!placeholderTs) {
+        console.error("Slack postMessage did not return a ts — cannot register a task without a thread anchor.");
+        return;
+      }
+
+      const issue = await createTaskIssue({
+        taskDescription,
+        requestingUsername: body.user_name ?? null,
+        slackMeta: { channelId: body.channel_id, threadTs: placeholderTs },
+      });
+
+      // Lets a later message in this same thread (e.g. an image) find its
+      // way back to this issue before any `jobs` row exists for it.
+      SlackThreads.recordThread(db, body.channel_id, placeholderTs, issue.issueId);
+
+      await updateSlackMessage(
+        body.channel_id,
+        placeholderTs,
+        `📝 Task registered as *${issue.identifier}* in Linear:\n> ${taskDescription}\nMove it to "*${config.linear.triggerStateName}*" in Linear when you want the agent to start working on it. <${issue.url}|View in Linear>`
+      );
+    } catch (err) {
+      console.error("Failed to register Slack task as a Linear issue:", err);
+      await postSlackMessage(
+        body.channel_id,
+        `❌ Failed to register task: ${err instanceof Error ? err.message : String(err)}`,
+        body.thread_ts
+      ).catch(() => {});
+    }
+  };
 }
 
 export function createFixReviewCommandHandler(db: Database.Database) {
@@ -144,13 +150,14 @@ export function createFixReviewCommandHandler(db: Database.Database) {
  */
 export function createSlackCommandsHandler(db: Database.Database) {
   const fixReviewHandler = createFixReviewCommandHandler(db);
+  const taskHandler = createTaskCommandHandler(db);
 
   return async function dispatch(req: Request, res: Response): Promise<void> {
     const command = (req.body as SlackSlashCommandPayload).command;
     if (command === "/fix") {
       await fixReviewHandler(req, res);
     } else {
-      await handleSlackTaskCommand(req, res);
+      await taskHandler(req, res);
     }
   };
 }

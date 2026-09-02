@@ -1,6 +1,7 @@
 import { simpleGit, type SimpleGit } from "simple-git";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { createOctokit } from "../config/clients.js";
 import { config } from "../config/env.js";
 
 export interface RepoSlug {
@@ -48,20 +49,14 @@ export interface CloneResult {
 export async function cloneRepo(params: {
   owner: string;
   repo: string;
-  baseBranch: string;
-  issueIdentifier: string;
+  branch: string;
+  workDirName: string;
 }): Promise<CloneResult> {
-  const dir = path.join(config.worker.scratchDir, `${params.issueIdentifier}-${Date.now()}`);
+  const dir = path.join(config.worker.scratchDir, `${params.workDirName}-${Date.now()}`);
   await mkdir(dir, { recursive: true });
 
   const remoteUrl = buildAuthenticatedRemoteUrl(params.owner, params.repo, config.github.auth.token);
-  await simpleGit().clone(remoteUrl, dir, [
-    "--branch",
-    params.baseBranch,
-    "--single-branch",
-    "--depth",
-    "50",
-  ]);
+  await simpleGit().clone(remoteUrl, dir, ["--branch", params.branch, "--single-branch", "--depth", "50"]);
 
   const git = simpleGit(dir);
   await git.addConfig("user.name", "slack-linear-claude-agent");
@@ -90,4 +85,104 @@ export async function pushBranch(git: SimpleGit, branchName: string): Promise<vo
 
 export async function cleanupClone(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
+}
+
+export async function createDraftPullRequest(params: {
+  owner: string;
+  repo: string;
+  base: string;
+  head: string;
+  title: string;
+  body: string;
+}): Promise<{ url: string; number: number }> {
+  const octokit = createOctokit(config.github.auth);
+  const { data } = await octokit.pulls.create({
+    owner: params.owner,
+    repo: params.repo,
+    base: params.base,
+    head: params.head,
+    title: params.title,
+    body: params.body,
+    draft: true,
+  });
+  return { url: data.html_url, number: data.number };
+}
+
+export interface PullRequestStatus {
+  number: number;
+  url: string;
+  title: string;
+  isDraft: boolean;
+  state: "open" | "closed";
+  merged: boolean;
+  /** null while GitHub is still computing mergeability. */
+  mergeableState: string | null;
+  reviewDecision: "approved" | "changes_requested" | "review_required" | "none";
+  checksState: "success" | "failure" | "pending" | "none";
+  updatedAt: string;
+}
+
+/** Latest review per reviewer wins — an earlier CHANGES_REQUESTED that was since re-approved shouldn't still block. */
+function summarizeReviewDecision(
+  reviews: { user: { login: string } | null; state: string; submitted_at?: string }[]
+): PullRequestStatus["reviewDecision"] {
+  const latestByReviewer = new Map<string, string>();
+  for (const review of reviews) {
+    const login = review.user?.login;
+    if (!login || !review.submitted_at) continue;
+    latestByReviewer.set(login, review.state);
+  }
+  const states = [...latestByReviewer.values()];
+  if (states.length === 0) return "review_required";
+  if (states.includes("CHANGES_REQUESTED")) return "changes_requested";
+  if (states.includes("APPROVED")) return "approved";
+  return "review_required";
+}
+
+function summarizeChecksState(
+  checkRuns: { status: string; conclusion: string | null }[]
+): PullRequestStatus["checksState"] {
+  if (checkRuns.length === 0) return "none";
+  const failing = new Set(["failure", "timed_out", "cancelled", "action_required"]);
+  if (checkRuns.some((run) => run.conclusion && failing.has(run.conclusion))) return "failure";
+  if (checkRuns.some((run) => run.status !== "completed")) return "pending";
+  return "success";
+}
+
+/** Finds the PR (if any) opened from the given branch and summarizes the signals the dashboard needs — draft state, review decision, and check status. Returns null if no PR was ever opened for this branch. */
+export async function findPullRequestForBranch(
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<PullRequestStatus | null> {
+  const octokit = createOctokit(config.github.auth);
+
+  const { data: matches } = await octokit.pulls.list({
+    owner,
+    repo,
+    head: `${owner}:${branch}`,
+    state: "all",
+    per_page: 1,
+  });
+  const match = matches[0];
+  if (!match) return null;
+
+  const [{ data: pr }, { data: reviews }, { data: checks }] = await Promise.all([
+    octokit.pulls.get({ owner, repo, pull_number: match.number }),
+    octokit.pulls.listReviews({ owner, repo, pull_number: match.number }),
+    octokit.checks.listForRef({ owner, repo, ref: branch }),
+  ]);
+
+  return {
+    number: pr.number,
+    url: pr.html_url,
+    title: pr.title,
+    isDraft: pr.draft ?? false,
+    state: pr.state as "open" | "closed",
+    merged: pr.merged,
+    mergeableState: pr.mergeable_state ?? null,
+    reviewDecision: summarizeReviewDecision(reviews),
+    checksState: summarizeChecksState(checks.check_runs),
+    updatedAt: pr.updated_at,
+  };
 }

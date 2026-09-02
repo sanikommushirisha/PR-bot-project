@@ -73,6 +73,12 @@ function getById(db: Database.Database, id: number): Job | undefined {
   return row ? rowToJob(row) : undefined;
 }
 
+/** Looks up the job that produced a given branch — used to correlate a GitHub PR's head ref back to its originating Linear issue/Slack thread. */
+function getByBranchName(db: Database.Database, branchName: string): Job | undefined {
+  const row = db.prepare("SELECT * FROM jobs WHERE branch_name = ?").get(branchName) as JobRow | undefined;
+  return row ? rowToJob(row) : undefined;
+}
+
 /**
  * Atomically claims the pending job with the best priority (1=Urgent ..
  * 4=Low first; 0/no-priority sorts last), oldest first within the same
@@ -106,6 +112,24 @@ function listActive(db: Database.Database): Job[] {
        ORDER BY (CASE WHEN priority = 0 THEN 999 ELSE priority END) ASC, created_at ASC`
     )
     .all() as JobRow[];
+  return rows.map(rowToJob);
+}
+
+/** Completed jobs with a PR-bearing branch, most recent first — the candidate set for GitHub PR status lookups. */
+function listCompletedWithBranch(db: Database.Database, limit = 50): Job[] {
+  const rows = db
+    .prepare(
+      "SELECT * FROM jobs WHERE status = 'completed' AND branch_name IS NOT NULL ORDER BY completed_at DESC LIMIT ?"
+    )
+    .all(limit) as JobRow[];
+  return rows.map(rowToJob);
+}
+
+/** Recently failed jobs — surfaced on the dashboard as needing a retry/dismiss decision. */
+function listFailed(db: Database.Database, limit = 20): Job[] {
+  const rows = db
+    .prepare("SELECT * FROM jobs WHERE status = 'failed' ORDER BY completed_at DESC LIMIT ?")
+    .all(limit) as JobRow[];
   return rows.map(rowToJob);
 }
 
@@ -185,8 +209,11 @@ export const Jobs = {
   enqueue: enqueueJob,
   getActiveByIssueId,
   getById,
+  getByBranchName,
   claimNextPending,
   listActive,
+  listCompletedWithBranch,
+  listFailed,
   getLastCompletedBranch,
   markCompleted,
   markFailed,

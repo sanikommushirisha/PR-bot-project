@@ -32,6 +32,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_issue
   ON jobs (linear_issue_id)
   WHERE status IN ('pending', 'running');
 
+-- Correlates a Slack thread back to the Linear issue it registered, from the
+-- moment /task creates the issue — before any \`jobs\` row exists for it (that
+-- only appears once the issue is moved to the trigger state). This is what
+-- lets a later message in the same thread (e.g. an image) find its way to
+-- the right Linear issue.
+CREATE TABLE IF NOT EXISTS slack_threads (
+  channel_id TEXT NOT NULL,
+  thread_ts TEXT NOT NULL,
+  linear_issue_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (channel_id, thread_ts)
+);
+
 -- Single-row table (id is always 1) tracking the batch-review checkpoint:
 -- how far the automated review has looked, and whatever it last flagged
 -- and is still awaiting a /fix decision on.

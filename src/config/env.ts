@@ -24,6 +24,11 @@ const envSchema = z.object({
   SCRATCH_DIR: z.string().min(1).default("./scratch"),
   DB_PATH: z.string().min(1).default("./data/jobs.sqlite"),
   PORT: z.coerce.number().int().positive().default(3000),
+
+  DASHBOARD_USERNAME: z.string().min(1, "DASHBOARD_USERNAME is required"),
+  DASHBOARD_PASSWORD: z.string().min(1, "DASHBOARD_PASSWORD is required"),
+  DASHBOARD_JWT_SECRET: z.string().min(1, "DASHBOARD_JWT_SECRET is required"),
+  DASHBOARD_CORS_ORIGINS: z.string().min(1, "DASHBOARD_CORS_ORIGINS is required (comma-separated)"),
 });
 
 function loadEnv() {
@@ -69,6 +74,12 @@ export const config = {
   },
   server: {
     port: env.PORT,
+  },
+  dashboard: {
+    username: env.DASHBOARD_USERNAME,
+    password: env.DASHBOARD_PASSWORD,
+    jwtSecret: env.DASHBOARD_JWT_SECRET,
+    corsOrigins: env.DASHBOARD_CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
   },
 } as const;
 

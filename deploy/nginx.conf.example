@@ -1,0 +1,39 @@
+# Reverse proxy (backend) + static file server (frontend) for one EC2 host.
+#
+# Replace:
+#   api.yourdomain.com   -> your backend's public domain
+#   app.yourdomain.com   -> your dashboard frontend's public domain
+#   /home/ubuntu/pr-bot  -> the absolute path this repo is cloned to on the host
+#
+# Install as two files under /etc/nginx/sites-available/, symlink into
+# sites-enabled, then run: sudo certbot --nginx -d api.yourdomain.com -d app.yourdomain.com
+# Certbot rewrites these blocks in place to add the HTTPS server block + the
+# HTTP->HTTPS redirect — don't hand-add TLS directives yourself first.
+
+# --- Backend: Slack/Linear webhooks + dashboard API ---
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# --- Frontend: dashboard-web static build (no process, just files) ---
+server {
+    listen 80;
+    server_name app.yourdomain.com;
+
+    root /home/ubuntu/pr-bot/apps/dashboard-web/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

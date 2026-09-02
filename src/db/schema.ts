@@ -22,16 +22,6 @@ CREATE TABLE IF NOT EXISTS jobs (
   completed_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_jobs_status_priority_created_at ON jobs (status, priority, created_at);
-
--- Unique only among non-terminal rows: prevents a re-triggered/duplicated
--- webhook delivery for the same issue from enqueueing a second concurrent
--- run, while still allowing the same issue to be queued again later (a
--- deliberate retry) once its previous run has finished.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_issue
-  ON jobs (linear_issue_id)
-  WHERE status IN ('pending', 'running');
-
 -- Correlates a Slack thread back to the Linear issue it registered, from the
 -- moment /task creates the issue — before any \`jobs\` row exists for it (that
 -- only appears once the issue is moved to the trigger state). This is what
@@ -58,11 +48,33 @@ CREATE TABLE IF NOT EXISTS review_state (
 `;
 
 /**
+ * Indexes run separately, after `SCHEMA_SQL` and `COLUMN_MIGRATIONS` — some
+ * reference columns (e.g. `priority`) that only exist on a pre-existing
+ * database once its column migrations have run.
+ */
+export const INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_jobs_status_priority_created_at ON jobs (status, priority, created_at);
+
+-- Unique only among non-terminal rows: prevents a re-triggered/duplicated
+-- webhook delivery for the same issue from enqueueing a second concurrent
+-- run, while still allowing the same issue to be queued again later (a
+-- deliberate retry) once its previous run has finished.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_issue
+  ON jobs (linear_issue_id)
+  WHERE status IN ('pending', 'running');
+`;
+
+/**
  * Columns added after a table's original creation. `CREATE TABLE IF NOT
  * EXISTS` above is a no-op against an already-existing table, so an existing
  * database needs these added explicitly via ALTER TABLE.
  */
 export const COLUMN_MIGRATIONS: { table: string; column: string; ddl: string }[] = [
+  {
+    table: "jobs",
+    column: "priority",
+    ddl: "ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+  },
   { table: "jobs", column: "branch_name", ddl: "ALTER TABLE jobs ADD COLUMN branch_name TEXT" },
   {
     table: "review_state",

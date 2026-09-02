@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { SCHEMA_SQL, COLUMN_MIGRATIONS } from "./schema.js";
+import { SCHEMA_SQL, INDEX_SQL, COLUMN_MIGRATIONS } from "./schema.js";
 
 let db: Database.Database | undefined;
 
@@ -42,5 +42,6 @@ export function getDb(dbPath: string): Database.Database {
   db.pragma("journal_mode = WAL");
   db.exec(SCHEMA_SQL);
   runColumnMigrations(db);
+  db.exec(INDEX_SQL);
   return db;
 }

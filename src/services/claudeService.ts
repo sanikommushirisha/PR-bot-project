@@ -1,7 +1,9 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { guardAgentTool } from "./claudeSecurity.js";
 import { config } from "../config/env.js";
 import type { FullIssueContext } from "./linearService.js";
+
+type PromptContent = SDKUserMessage["message"]["content"];
 
 export interface AgentRunResult {
   success: boolean;
@@ -25,6 +27,13 @@ function buildTaskPrompt(issue: FullIssueContext): string {
     issue.comments.forEach((comment, i) => lines.push(`${i + 1}. ${comment}`));
   }
 
+  if (issue.images.length > 0) {
+    lines.push(
+      "",
+      `${issue.images.length} image(s) from the issue/comments are attached below this message — refer to them as needed.`
+    );
+  }
+
   lines.push(
     "",
     "Instructions:",
@@ -38,8 +47,34 @@ function buildTaskPrompt(issue: FullIssueContext): string {
   return lines.join("\n");
 }
 
+function buildPromptContent(issue: FullIssueContext): PromptContent {
+  const text = buildTaskPrompt(issue);
+  if (issue.images.length === 0) return text;
+
+  return [
+    { type: "text", text },
+    ...issue.images.map((image) => ({
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: image.mediaType, data: image.base64 },
+    })),
+  ] as PromptContent;
+}
+
+/** The SDK accepts either a plain string prompt or a stream of user messages
+ * — a stream is required to attach image content blocks, so we wrap a
+ * single message in a one-shot async generator when images are present. */
+async function* toPromptStream(content: PromptContent): AsyncGenerator<SDKUserMessage> {
+  yield {
+    type: "user",
+    session_id: "",
+    message: { role: "user", content },
+    parent_tool_use_id: null,
+  };
+}
+
 export async function runAgentTask(cwd: string, issue: FullIssueContext): Promise<AgentRunResult> {
-  const prompt = buildTaskPrompt(issue);
+  const content = buildPromptContent(issue);
+  const prompt = typeof content === "string" ? content : toPromptStream(content);
 
   const stream = query({
     prompt,

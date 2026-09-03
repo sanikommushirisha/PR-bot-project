@@ -140,15 +140,25 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
       // kill kickRunner's while-loop and stall every other queued job too.
       console.error(`Failed to record job #${job.id} as failed:`, markFailedErr);
     }
-    ActivityLogs.insert(db, { jobId: job.id, source, level: "error", message });
+    try {
+      ActivityLogs.insert(db, { jobId: job.id, source, level: "error", message });
+    } catch (logErr) {
+      // Same reasoning as the markFailed guard above: a logging write must
+      // never be allowed to escape processJob and kill the runner loop.
+      console.error(`Failed to record activity log for job #${job.id}:`, logErr);
+    }
 
     await moveIssueToStateType(job.linearIssueId, "canceled", ["Failed"]).catch((moveErr) => {
-      ActivityLogs.insert(db, {
-        jobId: job.id,
-        source: "linear",
-        level: "error",
-        message: `Could not move issue to its failed state: ${moveErr instanceof Error ? moveErr.message : String(moveErr)}`,
-      });
+      try {
+        ActivityLogs.insert(db, {
+          jobId: job.id,
+          source: "linear",
+          level: "error",
+          message: `Could not move issue to its failed state: ${moveErr instanceof Error ? moveErr.message : String(moveErr)}`,
+        });
+      } catch (logErr) {
+        console.error(`Failed to record activity log for job #${job.id}:`, logErr);
+      }
     });
 
     if (job.channelId && job.threadTs) {

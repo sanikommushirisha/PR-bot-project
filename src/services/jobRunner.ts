@@ -84,7 +84,12 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
     }
 
     if (!(await hasChanges(git))) {
-      throw new Error("Agent finished without making any file changes.");
+      // agentResult.summary is Claude's own final message — if it stopped
+      // because it needed clarification rather than because it was done,
+      // that question lives here. Include it verbatim so it actually reaches
+      // the human (Slack thread + Linear failure state) instead of being
+      // replaced by this generic message.
+      throw new Error(`Agent finished without making any file changes. Agent's final message: ${agentResult.summary}`);
     }
 
     await commitAll(

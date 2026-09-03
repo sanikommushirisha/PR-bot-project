@@ -186,7 +186,8 @@ export async function runAgentTask(
         type: "preset",
         preset: "claude_code",
         append:
-          "You are running unattended as part of an automated Linear-to-PR pipeline. Never run git commit, git push, or open a pull request yourself — a separate deterministic process handles all git/GitHub actions after you finish.",
+          "You are running unattended as part of an automated Linear-to-PR pipeline. Never run git commit, git push, or open a pull request yourself — a separate deterministic process handles all git/GitHub actions after you finish. " +
+          "Nobody is watching this session in real time, so if the task is genuinely ambiguous or you're missing information you'd normally ask about, do not guess and do not make speculative changes: stop, and make your final message a clear, specific question stating exactly what you need clarified. That question is surfaced back to the person who filed the task — it is not lost — and they can answer it as a comment on the Linear issue and re-run the task.",
       },
     },
   });

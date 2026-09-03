@@ -1,7 +1,7 @@
 import type { DashboardCard } from "../types";
 import { formatElapsed } from "./format";
 
-export function Card({ card }: { card: DashboardCard }) {
+export function Card({ card, onViewLogs }: { card: DashboardCard; onViewLogs: (jobId: number) => void }) {
   return (
     <div className="card">
       <div className="card-row">
@@ -12,6 +12,11 @@ export function Card({ card }: { card: DashboardCard }) {
       <div className="card-row card-meta">
         <span className="card-reason">{card.reason}</span>
         <span className="card-time">{formatElapsed(card.timestamp)} in stage</span>
+        {card.jobId != null && (
+          <button type="button" className="btn btn-small" onClick={() => onViewLogs(card.jobId!)}>
+            View live logs
+          </button>
+        )}
         {card.prUrl && (
           <a className="btn btn-small" href={card.prUrl} target="_blank" rel="noopener noreferrer">
             View PR #{card.prNumber} ↗

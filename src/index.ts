@@ -11,6 +11,7 @@ import { resolveTeam } from "./services/linearService.js";
 import { getDb, Jobs } from "./db/index.js";
 import { kickRunner } from "./services/jobRunner.js";
 import { createDashboardHandler } from "./dashboard/dashboardRoute.js";
+import { createJobLogsHandler } from "./dashboard/jobLogsRoute.js";
 import { createLoginHandler } from "./auth/authRoute.js";
 import { requireAuth } from "./auth/authMiddleware.js";
 
@@ -66,6 +67,7 @@ async function main() {
   app.use("/api", cors({ origin: config.dashboard.corsOrigins }));
   app.post("/api/auth/login", express.json(), createLoginHandler());
   app.get("/api/dashboard", requireAuth, createDashboardHandler(db));
+  app.get("/api/jobs/:id/logs", requireAuth, createJobLogsHandler(db));
 
   // Linear is resolved once at startup purely to fail loudly and early if
   // LINEAR_TEAM_KEY is wrong — the service layer caches the result, so this
@@ -93,7 +95,7 @@ async function main() {
     console.log(`  Slack commands: POST /webhooks/slack/commands`);
     console.log(`  Slack events:   POST /webhooks/slack/events`);
     console.log(`  Linear events:  POST /webhooks/linear`);
-    console.log(`  Dashboard API:  POST /api/auth/login, GET /api/dashboard (Bearer token)`);
+    console.log(`  Dashboard API:  POST /api/auth/login, GET /api/dashboard, GET /api/jobs/:id/logs (Bearer token)`);
   });
 }
 

@@ -25,6 +25,8 @@ export interface DashboardCard {
   prNumber: number | null;
   /** SQLite ("YYYY-MM-DD HH:MM:SS", UTC) or ISO timestamp this card's "time in stage" is measured from. */
   timestamp: string;
+  /** Set only for a running job — lets the dashboard poll its live activity log. */
+  jobId: number | null;
 }
 
 export interface DashboardLanes {
@@ -46,6 +48,7 @@ function cardFromActiveJob(job: Job): DashboardCard {
     prUrl: null,
     prNumber: null,
     timestamp: job.startedAt ?? job.createdAt,
+    jobId: isRunning ? job.id : null,
   };
 }
 
@@ -59,6 +62,7 @@ function cardFromFailedJob(job: Job): DashboardCard {
     prUrl: null,
     prNumber: null,
     timestamp: job.completedAt ?? job.createdAt,
+    jobId: null,
   };
 }
 
@@ -70,6 +74,7 @@ function cardFromCompletedJob(job: Job, pr: PullRequestStatus): DashboardCard | 
     prUrl: pr.url,
     prNumber: pr.number,
     timestamp: pr.updatedAt,
+    jobId: null,
   };
 
   if (pr.merged) {

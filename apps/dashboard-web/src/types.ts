@@ -10,6 +10,19 @@ export interface DashboardCard {
   prNumber: number | null;
   /** SQLite ("YYYY-MM-DD HH:MM:SS", UTC) or ISO timestamp this card's "time in stage" is measured from. */
   timestamp: string;
+  /** Set only for a running job — lets the dashboard poll its live activity log. */
+  jobId: number | null;
+}
+
+export interface JobLogEntry {
+  seq: number;
+  timestamp: string;
+  text: string;
+}
+
+export interface JobLogsResponse {
+  status: string;
+  logs: JobLogEntry[];
 }
 
 export interface DashboardLanes {

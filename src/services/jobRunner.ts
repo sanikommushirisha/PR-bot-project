@@ -17,6 +17,7 @@ import {
 } from "./githubService.js";
 import { config } from "../config/env.js";
 import { runBatchReview } from "./reviewService.js";
+import { AgentLogs } from "./agentLogService.js";
 
 // Guards the queue-draining loop so only one job ever runs at a time in this
 // process, regardless of how many webhook deliveries arrive concurrently —
@@ -77,7 +78,7 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
 
     await createBranch(git, branchName);
 
-    const agentResult = await runAgentTask(dir, issueContext);
+    const agentResult = await runAgentTask(dir, issueContext, job.id);
     if (!agentResult.success) {
       throw new Error(`Agent session did not complete successfully: ${agentResult.summary}`);
     }
@@ -140,6 +141,9 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
       ).catch(() => {});
     }
   } finally {
+    // The dashboard's live-activity view only makes sense while the job is
+    // in progress — once it's completed or failed, drop its buffered log.
+    AgentLogs.clear(job.id);
     if (cloneDir) {
       await cleanupClone(cloneDir);
     }

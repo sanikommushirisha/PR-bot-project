@@ -9,7 +9,15 @@ const LANE_DOT_CLASS: Record<LaneKey, string> = {
   downstream: "dot-downstream",
 };
 
-export function Lane({ laneKey, cards }: { laneKey: LaneKey; cards: DashboardCard[] }) {
+export function Lane({
+  laneKey,
+  cards,
+  onViewLogs,
+}: {
+  laneKey: LaneKey;
+  cards: DashboardCard[];
+  onViewLogs: (jobId: number) => void;
+}) {
   const meta = LANE_META[laneKey];
 
   return (
@@ -24,7 +32,9 @@ export function Lane({ laneKey, cards }: { laneKey: LaneKey; cards: DashboardCar
         {cards.length === 0 ? (
           <div className="empty">Nothing here right now.</div>
         ) : (
-          cards.map((card) => <Card key={`${card.identifier}-${card.prNumber ?? "job"}`} card={card} />)
+          cards.map((card) => (
+            <Card key={`${card.identifier}-${card.prNumber ?? "job"}`} card={card} onViewLogs={onViewLogs} />
+          ))
         )}
       </div>
     </section>

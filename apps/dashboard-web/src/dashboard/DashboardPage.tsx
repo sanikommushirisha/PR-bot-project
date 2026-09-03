@@ -4,6 +4,7 @@ import { ApiError, fetchDashboard } from "../api/client";
 import { LANE_ORDER, type DashboardLanes } from "../types";
 import { Lane } from "./Lane";
 import { Legend } from "./Legend";
+import { LogsModal } from "./LogsModal";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -12,6 +13,7 @@ export function DashboardPage() {
   const [lanes, setLanes] = useState<DashboardLanes | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewingJobId, setViewingJobId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -68,11 +70,13 @@ export function DashboardPage() {
       {lanes && (
         <>
           {LANE_ORDER.map((key) => (
-            <Lane key={key} laneKey={key} cards={lanes[key]} />
+            <Lane key={key} laneKey={key} cards={lanes[key]} onViewLogs={setViewingJobId} />
           ))}
           <Legend />
         </>
       )}
+
+      {viewingJobId != null && <LogsModal jobId={viewingJobId} onClose={() => setViewingJobId(null)} />}
     </div>
   );
 }

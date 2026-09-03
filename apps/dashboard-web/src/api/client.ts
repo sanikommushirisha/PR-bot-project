@@ -1,4 +1,4 @@
-import type { DashboardLanes } from "../types";
+import type { DashboardLanes, JobLogsResponse } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const TOKEN_KEY = "dashboard_token";
@@ -51,4 +51,8 @@ export function login(username: string, password: string): Promise<{ token: stri
 
 export function fetchDashboard(): Promise<DashboardLanes> {
   return request("/api/dashboard");
+}
+
+export function fetchJobLogs(jobId: number, after: number): Promise<JobLogsResponse> {
+  return request(`/api/jobs/${jobId}/logs?after=${after}`);
 }

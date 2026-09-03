@@ -1,7 +1,8 @@
-import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { guardAgentTool } from "./claudeSecurity.js";
 import { config } from "../config/env.js";
 import type { FullIssueContext } from "./linearService.js";
+import { AgentLogs } from "./agentLogService.js";
 
 type PromptContent = SDKUserMessage["message"]["content"];
 
@@ -72,7 +73,66 @@ async function* toPromptStream(content: PromptContent): AsyncGenerator<SDKUserMe
   };
 }
 
-export async function runAgentTask(cwd: string, issue: FullIssueContext): Promise<AgentRunResult> {
+function truncate(text: string, max: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
+}
+
+function stringifyToolInput(input: unknown): string {
+  try {
+    return truncate(JSON.stringify(input), 200);
+  } catch {
+    return "(unserializable input)";
+  }
+}
+
+/** Extracts a short human-readable preview from a tool_result block's content, which is either a plain string or a list of content blocks (usually text). */
+function previewToolResultContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => (block && typeof block === "object" && "text" in block ? String((block as { text: unknown }).text) : `[${(block as { type?: string })?.type ?? "content"}]`))
+      .join(" ");
+  }
+  return "";
+}
+
+/** Turns one message from the agent's live stream into zero or more log
+ * lines for the dashboard's "live activity" view — mirrors what you'd see
+ * scrolling by in a terminal running Claude Code interactively. */
+function logStreamMessage(jobId: number, message: SDKMessage): void {
+  if (message.type === "system" && message.subtype === "init") {
+    AgentLogs.append(jobId, `Session started (model: ${message.model}).`);
+    return;
+  }
+
+  if (message.type === "assistant") {
+    for (const block of message.message.content) {
+      if (block.type === "text") {
+        AgentLogs.append(jobId, block.text);
+      } else if (block.type === "tool_use") {
+        AgentLogs.append(jobId, `→ ${block.name}(${stringifyToolInput(block.input)})`);
+      }
+    }
+    return;
+  }
+
+  if (message.type === "user" && Array.isArray(message.message.content)) {
+    for (const block of message.message.content) {
+      if (block.type === "tool_result") {
+        const preview = truncate(previewToolResultContent(block.content), 300) || "(no output)";
+        AgentLogs.append(jobId, `${block.is_error ? "✗" : "✓"} ${preview}`);
+      }
+    }
+    return;
+  }
+
+  if (message.type === "result") {
+    AgentLogs.append(jobId, message.subtype === "success" ? "Task finished." : "Task finished with an error.");
+  }
+}
+
+export async function runAgentTask(cwd: string, issue: FullIssueContext, jobId: number): Promise<AgentRunResult> {
   const content = buildPromptContent(issue);
   const prompt = typeof content === "string" ? content : toPromptStream(content);
 
@@ -114,6 +174,7 @@ export async function runAgentTask(cwd: string, issue: FullIssueContext): Promis
   let costUsd: number | undefined;
 
   for await (const message of stream) {
+    logStreamMessage(jobId, message);
     if (message.type !== "result") continue;
 
     isError = message.is_error;

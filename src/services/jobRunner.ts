@@ -6,6 +6,7 @@ import { postSlackMessage } from "./slackService.js";
 import { runAgentTask } from "./claudeService.js";
 import {
   cloneRepo,
+  installDependencies,
   createBranch,
   hasChanges,
   commitAll,
@@ -75,6 +76,9 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
       workDirName: issueContext.identifier,
     });
     cloneDir = dir;
+
+    ActivityLogs.insert(db, { jobId: job.id, source: "system", level: "info", message: "Installing dependencies (npm install)…" });
+    await installDependencies(dir);
 
     await createBranch(git, branchName);
 

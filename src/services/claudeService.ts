@@ -163,7 +163,15 @@ export async function runAgentTask(
     prompt,
     options: {
       cwd,
-      env: { ...process.env, ANTHROPIC_API_KEY: config.anthropic.apiKey },
+      // This process runs under NODE_ENV=production (ecosystem.config.cjs).
+      // Left as-is, that inherits straight into the agent's own shell — and
+      // npm's default behavior under NODE_ENV=production is to silently skip
+      // devDependencies on `npm install`, which is exactly the class of bug
+      // that made the target repo's pre-push typecheck hook fail with
+      // dozens of "Cannot find module 'vitest'" errors. The agent's install
+      // should behave like a normal developer checkout, not inherit this
+      // process's own runtime mode.
+      env: { ...process.env, NODE_ENV: "development", ANTHROPIC_API_KEY: config.anthropic.apiKey },
       // 'acceptEdits' auto-approves Write/Edit through a path that bypasses
       // canUseTool entirely, regardless of allowedTools — confirmed by
       // direct testing (it silently let a canUseTool-denied file write
@@ -186,7 +194,7 @@ export async function runAgentTask(
         type: "preset",
         preset: "claude_code",
         append:
-          "You are running unattended as part of an automated Linear-to-PR pipeline. Never run git commit, git push, or open a pull request yourself — a separate deterministic process handles all git/GitHub actions after you finish. " +
+          "You are running unattended as part of an automated Linear-to-PR pipeline. Never run git commit, git push, or open a pull request yourself — a separate deterministic process handles all git/GitHub actions after you finish. Dependencies are already installed (npm install ran before you started) — no need to run it yourself unless you add a new package. " +
           "Nobody is watching this session in real time, so if the task is genuinely ambiguous or you're missing information you'd normally ask about, do not guess and do not make speculative changes: stop, and make your final message a clear, specific question stating exactly what you need clarified. That question is surfaced back to the person who filed the task — it is not lost — and they can answer it as a comment on the Linear issue and re-run the task.",
       },
     },

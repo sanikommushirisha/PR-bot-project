@@ -1,5 +1,5 @@
 import { simpleGit, type SimpleGit } from "simple-git";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { createOctokit } from "../config/clients.js";
 import { config } from "../config/env.js";
@@ -97,6 +97,25 @@ export async function pushBranch(git: SimpleGit, branchName: string): Promise<vo
 
 export async function cleanupClone(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
+}
+
+/**
+ * Removes every leftover clone directory under the scratch dir. A live job
+ * always cleans up its own dir in `processJob`'s `finally` block before this
+ * process could restart, so anything still present at startup was orphaned
+ * by a crash or a restart mid-job — left behind forever otherwise, silently
+ * filling the disk (a multi-GB clone per interrupted job) until writes start
+ * failing across the whole app.
+ */
+export async function cleanupStaleScratchDirs(scratchDir: string): Promise<{ removed: number }> {
+  const entries = await readdir(scratchDir, { withFileTypes: true });
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    await rm(path.join(scratchDir, entry.name), { recursive: true, force: true });
+    removed++;
+  }
+  return { removed };
 }
 
 export async function createDraftPullRequest(params: {

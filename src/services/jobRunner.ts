@@ -131,7 +131,15 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
     const source = integrationSourceOf(err);
     console.error(`Job #${job.id} (${job.linearIssueIdentifier}) failed [${source}]:`, err);
 
-    Jobs.markFailed(db, job.id, message);
+    try {
+      Jobs.markFailed(db, job.id, message);
+    } catch (markFailedErr) {
+      // If this write itself fails (e.g. disk full), the job stays "running"
+      // rather than "failed" — resetStuckJobs recovers it on next startup.
+      // What must not happen is this error escaping processJob: that would
+      // kill kickRunner's while-loop and stall every other queued job too.
+      console.error(`Failed to record job #${job.id} as failed:`, markFailedErr);
+    }
     ActivityLogs.insert(db, { jobId: job.id, source, level: "error", message });
 
     await moveIssueToStateType(job.linearIssueId, "canceled", ["Failed"]).catch((moveErr) => {
@@ -152,7 +160,9 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
     }
   } finally {
     if (cloneDir) {
-      await cleanupClone(cloneDir);
+      await cleanupClone(cloneDir).catch((cleanupErr) => {
+        console.error(`Failed to clean up clone dir for job #${job.id}:`, cleanupErr);
+      });
     }
   }
 }

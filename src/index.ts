@@ -10,6 +10,7 @@ import { createLinearWebhookHandler } from "./webhooks/linearEvents.js";
 import { resolveTeam } from "./services/linearService.js";
 import { getDb, Jobs, ActivityLogs } from "./db/index.js";
 import { kickRunner } from "./services/jobRunner.js";
+import { cleanupStaleScratchDirs } from "./services/githubService.js";
 import { startLogRetentionCron } from "./services/logRetentionCron.js";
 import { createDashboardHandler } from "./dashboard/dashboardRoute.js";
 import { createJobLogsHandler, createDeleteJobLogsHandler } from "./dashboard/jobLogsRoute.js";
@@ -27,6 +28,11 @@ async function main() {
   const { requeued, failed } = Jobs.resetStuck(db, STUCK_JOB_TIMEOUT_MS);
   if (requeued || failed) {
     console.log(`Startup recovery: requeued ${requeued} stuck job(s), marked ${failed} job(s) failed past the retry limit.`);
+  }
+
+  const { removed } = await cleanupStaleScratchDirs(config.worker.scratchDir);
+  if (removed) {
+    console.log(`Startup recovery: removed ${removed} orphaned clone dir(s) left over from a crashed/restarted job.`);
   }
 
   app.get("/health", (_req, res) => {

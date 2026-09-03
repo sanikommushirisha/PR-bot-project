@@ -8,12 +8,15 @@ import { createSlackCommandsHandler } from "./webhooks/slackCommands.js";
 import { createSlackEventsHandler } from "./webhooks/slackEvents.js";
 import { createLinearWebhookHandler } from "./webhooks/linearEvents.js";
 import { resolveTeam } from "./services/linearService.js";
-import { getDb, Jobs } from "./db/index.js";
+import { getDb, Jobs, ActivityLogs } from "./db/index.js";
 import { kickRunner } from "./services/jobRunner.js";
+import { startLogRetentionCron } from "./services/logRetentionCron.js";
 import { createDashboardHandler } from "./dashboard/dashboardRoute.js";
-import { createJobLogsHandler } from "./dashboard/jobLogsRoute.js";
+import { createJobLogsHandler, createDeleteJobLogsHandler } from "./dashboard/jobLogsRoute.js";
+import { createErrorsHandler, createDeleteErrorsHandler } from "./dashboard/errorsRoute.js";
 import { createLoginHandler } from "./auth/authRoute.js";
 import { requireAuth } from "./auth/authMiddleware.js";
+import { integrationSourceOf } from "./errors/integrationError.js";
 
 const STUCK_JOB_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -68,6 +71,9 @@ async function main() {
   app.post("/api/auth/login", express.json(), createLoginHandler());
   app.get("/api/dashboard", requireAuth, createDashboardHandler(db));
   app.get("/api/jobs/:id/logs", requireAuth, createJobLogsHandler(db));
+  app.delete("/api/jobs/:id/logs", requireAuth, createDeleteJobLogsHandler(db));
+  app.get("/api/errors", requireAuth, createErrorsHandler(db));
+  app.delete("/api/errors", requireAuth, createDeleteErrorsHandler(db));
 
   // Linear is resolved once at startup purely to fail loudly and early if
   // LINEAR_TEAM_KEY is wrong — the service layer caches the result, so this
@@ -76,8 +82,19 @@ async function main() {
     const team = await resolveTeam();
     console.log(`Linear team resolved: ${team.key} (${team.id}).`);
   } catch (err) {
-    console.error("Could not resolve Linear team at startup:", err instanceof Error ? err.message : err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Could not resolve Linear team at startup:", message);
+    ActivityLogs.insert(db, {
+      jobId: null,
+      source: integrationSourceOf(err),
+      level: "error",
+      message: `Startup: could not resolve Linear team — ${message}`,
+    });
   }
+
+  // Runs the activity_logs retention sweep immediately, then every 6h for
+  // the life of the process — logs never accumulate past ~2 days.
+  startLogRetentionCron(db);
 
   // Pick back up on anything left `pending` from before a restart (e.g. a
   // job enqueued right before the process was killed).
@@ -95,7 +112,9 @@ async function main() {
     console.log(`  Slack commands: POST /webhooks/slack/commands`);
     console.log(`  Slack events:   POST /webhooks/slack/events`);
     console.log(`  Linear events:  POST /webhooks/linear`);
-    console.log(`  Dashboard API:  POST /api/auth/login, GET /api/dashboard, GET /api/jobs/:id/logs (Bearer token)`);
+    console.log(
+      `  Dashboard API:  POST /api/auth/login, GET/DELETE /api/dashboard, /api/jobs/:id/logs, /api/errors (Bearer token)`
+    );
   });
 }
 

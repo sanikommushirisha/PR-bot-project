@@ -5,6 +5,7 @@ import { LANE_ORDER, type DashboardLanes } from "../types";
 import { Lane } from "./Lane";
 import { Legend } from "./Legend";
 import { LogsModal } from "./LogsModal";
+import { IntegrationErrorsPanel } from "./IntegrationErrorsPanel";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -72,6 +73,7 @@ export function DashboardPage() {
           {LANE_ORDER.map((key) => (
             <Lane key={key} laneKey={key} cards={lanes[key]} onViewLogs={setViewingJobId} />
           ))}
+          <IntegrationErrorsPanel />
           <Legend />
         </>
       )}

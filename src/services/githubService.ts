@@ -3,6 +3,16 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { createOctokit } from "../config/clients.js";
 import { config } from "../config/env.js";
+import { toIntegrationError } from "../errors/integrationError.js";
+
+/** Wraps a GitHub-bound call (git over HTTPS, or the REST API) so any failure surfaces on the dashboard tagged as a GitHub integration error. */
+async function callGithub<T>(context: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    throw toIntegrationError("github", context, err);
+  }
+}
 
 export interface RepoSlug {
   owner: string;
@@ -56,7 +66,9 @@ export async function cloneRepo(params: {
   await mkdir(dir, { recursive: true });
 
   const remoteUrl = buildAuthenticatedRemoteUrl(params.owner, params.repo, config.github.auth.token);
-  await simpleGit().clone(remoteUrl, dir, ["--branch", params.branch, "--single-branch", "--depth", "50"]);
+  await callGithub(`clone ${params.owner}/${params.repo}#${params.branch}`, () =>
+    simpleGit().clone(remoteUrl, dir, ["--branch", params.branch, "--single-branch", "--depth", "50"])
+  );
 
   const git = simpleGit(dir);
   await git.addConfig("user.name", "slack-linear-claude-agent");
@@ -80,7 +92,7 @@ export async function commitAll(git: SimpleGit, message: string): Promise<void> 
 }
 
 export async function pushBranch(git: SimpleGit, branchName: string): Promise<void> {
-  await git.push(["-u", "origin", branchName]);
+  await callGithub(`push branch ${branchName}`, () => git.push(["-u", "origin", branchName]));
 }
 
 export async function cleanupClone(dir: string): Promise<void> {
@@ -96,15 +108,17 @@ export async function createDraftPullRequest(params: {
   body: string;
 }): Promise<{ url: string; number: number }> {
   const octokit = createOctokit(config.github.auth);
-  const { data } = await octokit.pulls.create({
-    owner: params.owner,
-    repo: params.repo,
-    base: params.base,
-    head: params.head,
-    title: params.title,
-    body: params.body,
-    draft: true,
-  });
+  const { data } = await callGithub(`create draft PR ${params.owner}/${params.repo} ${params.head} -> ${params.base}`, () =>
+    octokit.pulls.create({
+      owner: params.owner,
+      repo: params.repo,
+      base: params.base,
+      head: params.head,
+      title: params.title,
+      body: params.body,
+      draft: true,
+    })
+  );
   return { url: data.html_url, number: data.number };
 }
 
@@ -157,21 +171,27 @@ export async function findPullRequestForBranch(
 ): Promise<PullRequestStatus | null> {
   const octokit = createOctokit(config.github.auth);
 
-  const { data: matches } = await octokit.pulls.list({
-    owner,
-    repo,
-    head: `${owner}:${branch}`,
-    state: "all",
-    per_page: 1,
-  });
+  const { data: matches } = await callGithub(`list PRs for ${owner}/${repo}#${branch}`, () =>
+    octokit.pulls.list({
+      owner,
+      repo,
+      head: `${owner}:${branch}`,
+      state: "all",
+      per_page: 1,
+    })
+  );
   const match = matches[0];
   if (!match) return null;
 
-  const [{ data: pr }, { data: reviews }, { data: checks }] = await Promise.all([
-    octokit.pulls.get({ owner, repo, pull_number: match.number }),
-    octokit.pulls.listReviews({ owner, repo, pull_number: match.number }),
-    octokit.checks.listForRef({ owner, repo, ref: branch }),
-  ]);
+  const [{ data: pr }, { data: reviews }, { data: checks }] = await callGithub(
+    `fetch PR #${match.number} status for ${owner}/${repo}`,
+    () =>
+      Promise.all([
+        octokit.pulls.get({ owner, repo, pull_number: match.number }),
+        octokit.pulls.listReviews({ owner, repo, pull_number: match.number }),
+        octokit.checks.listForRef({ owner, repo, ref: branch }),
+      ])
+  );
 
   return {
     number: pr.number,

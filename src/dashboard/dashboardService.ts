@@ -1,8 +1,9 @@
 import type Database from "better-sqlite3";
-import { Jobs } from "../db/index.js";
+import { Jobs, ActivityLogs } from "../db/index.js";
 import type { Job } from "../types/job.js";
 import { findPullRequestForBranch, parseRepoSlug, type PullRequestStatus } from "../services/githubService.js";
 import { config } from "../config/env.js";
+import { integrationSourceOf } from "../errors/integrationError.js";
 
 export type LaneKey = "your_move" | "waiting_on_reviewers" | "automated" | "downstream";
 
@@ -127,7 +128,9 @@ export async function buildDashboard(db: Database.Database): Promise<DashboardLa
         const pr = await findPullRequestForBranch(owner, repo, job.branchName);
         return pr ? cardFromCompletedJob(job, pr) : null;
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         console.error(`Dashboard: failed to fetch PR status for job #${job.id} (${job.branchName}):`, err);
+        ActivityLogs.insert(db, { jobId: job.id, source: integrationSourceOf(err), level: "error", message });
         return null;
       }
     })

@@ -1,4 +1,4 @@
-import type { DashboardLanes, JobLogsResponse } from "../types";
+import type { DashboardLanes, JobLogsResponse, IntegrationErrorsResponse } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const TOKEN_KEY = "dashboard_token";
@@ -55,4 +55,16 @@ export function fetchDashboard(): Promise<DashboardLanes> {
 
 export function fetchJobLogs(jobId: number, after: number): Promise<JobLogsResponse> {
   return request(`/api/jobs/${jobId}/logs?after=${after}`);
+}
+
+export function deleteJobLogs(jobId: number): Promise<{ deleted: number }> {
+  return request(`/api/jobs/${jobId}/logs`, { method: "DELETE" });
+}
+
+export function fetchIntegrationErrors(): Promise<IntegrationErrorsResponse> {
+  return request("/api/errors");
+}
+
+export function deleteIntegrationErrors(): Promise<{ deleted: number }> {
+  return request("/api/errors", { method: "DELETE" });
 }

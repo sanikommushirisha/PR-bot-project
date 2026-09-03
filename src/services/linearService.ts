@@ -2,6 +2,16 @@ import type { WorkflowState } from "@linear/sdk";
 import { linearClient } from "../config/clients.js";
 import { config } from "../config/env.js";
 import { buildSlackMetaMarker, type SlackMeta } from "./slackService.js";
+import { toIntegrationError } from "../errors/integrationError.js";
+
+/** Wraps a Linear API call so any failure surfaces on the dashboard tagged as a Linear integration error, not a generic/unattributed one. */
+async function callLinear<T>(context: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    throw toIntegrationError("linear", context, err);
+  }
+}
 
 export interface LinearTeam {
   id: string;
@@ -15,13 +25,19 @@ let cachedTeam: LinearTeam | undefined;
 export async function resolveTeam(): Promise<LinearTeam> {
   if (cachedTeam) return cachedTeam;
 
-  const teams = await linearClient.teams({ filter: { key: { eq: config.linear.teamKey } } });
+  const teams = await callLinear("resolve team", () =>
+    linearClient.teams({ filter: { key: { eq: config.linear.teamKey } } })
+  );
   const team = teams.nodes[0];
   if (!team) {
-    throw new Error(`No Linear team found with key "${config.linear.teamKey}". Check LINEAR_TEAM_KEY.`);
+    throw toIntegrationError(
+      "linear",
+      "resolve team",
+      new Error(`No Linear team found with key "${config.linear.teamKey}". Check LINEAR_TEAM_KEY.`)
+    );
   }
 
-  const states = await team.states();
+  const states = await callLinear("fetch team workflow states", () => team.states());
   const statesByType = new Map<string, WorkflowState[]>();
   for (const state of states.nodes) {
     const list = statesByType.get(state.type) ?? [];
@@ -70,10 +86,12 @@ export async function createTaskIssue(params: {
     buildSlackMetaMarker(params.slackMeta),
   ].join("\n");
 
-  const payload = await linearClient.createIssue({ teamId: team.id, title, description, stateId });
+  const payload = await callLinear("create issue", () =>
+    linearClient.createIssue({ teamId: team.id, title, description, stateId })
+  );
   const issue = await payload.issue;
   if (!payload.success || !issue) {
-    throw new Error("Linear createIssue did not return an issue.");
+    throw toIntegrationError("linear", "create issue", new Error("Linear createIssue did not return an issue."));
   }
 
   return { issueId: issue.id, identifier: issue.identifier, url: issue.url };
@@ -88,7 +106,9 @@ export async function moveIssueToStateType(
   const team = await resolveTeam();
   const stateId = pickStateId(team, type, preferredNames);
   if (!stateId) return;
-  await linearClient.updateIssue(issueId, { stateId });
+  await callLinear(`move issue ${issueId} to state type "${type}"`, () =>
+    linearClient.updateIssue(issueId, { stateId })
+  );
 }
 
 /**
@@ -105,7 +125,9 @@ export async function moveIssueToStateName(issueId: string, name: string): Promi
   for (const states of team.statesByType.values()) {
     const match = states.find((state) => state.name.toLowerCase() === name.toLowerCase());
     if (match) {
-      await linearClient.updateIssue(issueId, { stateId: match.id });
+      await callLinear(`move issue ${issueId} to state "${name}"`, () =>
+        linearClient.updateIssue(issueId, { stateId: match.id })
+      );
       return true;
     }
   }
@@ -208,7 +230,7 @@ async function collectIssueImageUrls(issue: Awaited<ReturnType<typeof linearClie
     for (const url of extractInlineImageUrls(text)) urls.add(url);
   }
 
-  const attachmentConnection = await issue.attachments();
+  const attachmentConnection = await callLinear("fetch issue attachments", () => issue.attachments());
   for (const attachment of attachmentConnection.nodes) {
     if (isLinearHostedUrl(attachment.url) && /\.(png|jpe?g|gif|webp)(\?|$)/i.test(attachment.url)) {
       urls.add(attachment.url);
@@ -220,8 +242,8 @@ async function collectIssueImageUrls(issue: Awaited<ReturnType<typeof linearClie
 
 /** Fetches an issue plus its discussion comments and images, for handing to Claude as context. */
 export async function fetchFullIssueContext(issueId: string): Promise<FullIssueContext> {
-  const issue = await linearClient.issue(issueId);
-  const commentConnection = await issue.comments();
+  const issue = await callLinear(`fetch issue ${issueId}`, () => linearClient.issue(issueId));
+  const commentConnection = await callLinear(`fetch comments for issue ${issueId}`, () => issue.comments());
   const comments = commentConnection.nodes.map((comment) => comment.body);
 
   const imageUrls = await collectIssueImageUrls(issue, [issue.description ?? "", ...comments]);

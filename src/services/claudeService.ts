@@ -1,8 +1,10 @@
+import type Database from "better-sqlite3";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { guardAgentTool } from "./claudeSecurity.js";
 import { config } from "../config/env.js";
 import type { FullIssueContext } from "./linearService.js";
-import { AgentLogs } from "./agentLogService.js";
+import { ActivityLogs } from "../db/activityLogs.js";
+import { toIntegrationError } from "../errors/integrationError.js";
 
 type PromptContent = SDKUserMessage["message"]["content"];
 
@@ -97,21 +99,26 @@ function previewToolResultContent(content: unknown): string {
   return "";
 }
 
+function logInfo(db: Database.Database, jobId: number, message: string): void {
+  if (!message.trim()) return;
+  ActivityLogs.insert(db, { jobId, source: "claude", level: "info", message });
+}
+
 /** Turns one message from the agent's live stream into zero or more log
  * lines for the dashboard's "live activity" view — mirrors what you'd see
  * scrolling by in a terminal running Claude Code interactively. */
-function logStreamMessage(jobId: number, message: SDKMessage): void {
+function logStreamMessage(db: Database.Database, jobId: number, message: SDKMessage): void {
   if (message.type === "system" && message.subtype === "init") {
-    AgentLogs.append(jobId, `Session started (model: ${message.model}).`);
+    logInfo(db, jobId, `Session started (model: ${message.model}).`);
     return;
   }
 
   if (message.type === "assistant") {
     for (const block of message.message.content) {
       if (block.type === "text") {
-        AgentLogs.append(jobId, block.text);
+        logInfo(db, jobId, block.text);
       } else if (block.type === "tool_use") {
-        AgentLogs.append(jobId, `→ ${block.name}(${stringifyToolInput(block.input)})`);
+        logInfo(db, jobId, `→ ${block.name}(${stringifyToolInput(block.input)})`);
       }
     }
     return;
@@ -121,18 +128,34 @@ function logStreamMessage(jobId: number, message: SDKMessage): void {
     for (const block of message.message.content) {
       if (block.type === "tool_result") {
         const preview = truncate(previewToolResultContent(block.content), 300) || "(no output)";
-        AgentLogs.append(jobId, `${block.is_error ? "✗" : "✓"} ${preview}`);
+        logInfo(db, jobId, `${block.is_error ? "✗" : "✓"} ${preview}`);
       }
     }
     return;
   }
 
   if (message.type === "result") {
-    AgentLogs.append(jobId, message.subtype === "success" ? "Task finished." : "Task finished with an error.");
+    if (message.subtype === "success") {
+      logInfo(db, jobId, "Task finished.");
+    } else {
+      // A real Claude-side failure (max turns/budget hit, execution error) —
+      // worth surfacing on the integration-errors view, not just the live feed.
+      ActivityLogs.insert(db, {
+        jobId,
+        source: "claude",
+        level: "error",
+        message: `Agent run ended in error (${message.subtype}): ${message.errors.join("; ")}`,
+      });
+    }
   }
 }
 
-export async function runAgentTask(cwd: string, issue: FullIssueContext, jobId: number): Promise<AgentRunResult> {
+export async function runAgentTask(
+  cwd: string,
+  issue: FullIssueContext,
+  jobId: number,
+  db: Database.Database
+): Promise<AgentRunResult> {
   const content = buildPromptContent(issue);
   const prompt = typeof content === "string" ? content : toPromptStream(content);
 
@@ -173,14 +196,21 @@ export async function runAgentTask(cwd: string, issue: FullIssueContext, jobId: 
   let turns = 0;
   let costUsd: number | undefined;
 
-  for await (const message of stream) {
-    logStreamMessage(jobId, message);
-    if (message.type !== "result") continue;
+  try {
+    for await (const message of stream) {
+      logStreamMessage(db, jobId, message);
+      if (message.type !== "result") continue;
 
-    isError = message.is_error;
-    turns = message.num_turns;
-    costUsd = message.total_cost_usd;
-    summary = message.subtype === "success" ? message.result : message.errors.join("; ");
+      isError = message.is_error;
+      turns = message.num_turns;
+      costUsd = message.total_cost_usd;
+      summary = message.subtype === "success" ? message.result : message.errors.join("; ");
+    }
+  } catch (err) {
+    // The SDK subprocess/transport itself failed (e.g. couldn't reach the
+    // Anthropic API, or crashed) — distinct from a completed-but-unsuccessful
+    // run, which is reported via the 'result' message above instead.
+    throw toIntegrationError("claude", "Agent stream failed", err);
   }
 
   return { success: !isError, summary, turns, costUsd };

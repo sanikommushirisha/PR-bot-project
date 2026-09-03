@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { Jobs } from "../db/index.js";
+import { Jobs, ActivityLogs } from "../db/index.js";
 import type { Job } from "../types/job.js";
 import { fetchFullIssueContext, moveIssueToStateType } from "./linearService.js";
 import { postSlackMessage } from "./slackService.js";
@@ -17,7 +17,7 @@ import {
 } from "./githubService.js";
 import { config } from "../config/env.js";
 import { runBatchReview } from "./reviewService.js";
-import { AgentLogs } from "./agentLogService.js";
+import { IntegrationError, integrationSourceOf } from "../errors/integrationError.js";
 
 // Guards the queue-draining loop so only one job ever runs at a time in this
 // process, regardless of how many webhook deliveries arrive concurrently —
@@ -78,9 +78,9 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
 
     await createBranch(git, branchName);
 
-    const agentResult = await runAgentTask(dir, issueContext, job.id);
+    const agentResult = await runAgentTask(dir, issueContext, job.id, db);
     if (!agentResult.success) {
-      throw new Error(`Agent session did not complete successfully: ${agentResult.summary}`);
+      throw new IntegrationError("claude", `Agent session did not complete successfully: ${agentResult.summary}`);
     }
 
     if (!(await hasChanges(git))) {
@@ -128,10 +128,20 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
     console.log(`Finished job #${job.id} (${job.linearIssueIdentifier}) — PR #${pr.number}: ${pr.url}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`Job #${job.id} (${job.linearIssueIdentifier}) failed:`, err);
+    const source = integrationSourceOf(err);
+    console.error(`Job #${job.id} (${job.linearIssueIdentifier}) failed [${source}]:`, err);
 
     Jobs.markFailed(db, job.id, message);
-    await moveIssueToStateType(job.linearIssueId, "canceled", ["Failed"]).catch(() => {});
+    ActivityLogs.insert(db, { jobId: job.id, source, level: "error", message });
+
+    await moveIssueToStateType(job.linearIssueId, "canceled", ["Failed"]).catch((moveErr) => {
+      ActivityLogs.insert(db, {
+        jobId: job.id,
+        source: "linear",
+        level: "error",
+        message: `Could not move issue to its failed state: ${moveErr instanceof Error ? moveErr.message : String(moveErr)}`,
+      });
+    });
 
     if (job.channelId && job.threadTs) {
       await postSlackMessage(
@@ -141,9 +151,6 @@ async function processJob(db: Database.Database, job: Job): Promise<void> {
       ).catch(() => {});
     }
   } finally {
-    // The dashboard's live-activity view only makes sense while the job is
-    // in progress — once it's completed or failed, drop its buffered log.
-    AgentLogs.clear(job.id);
     if (cloneDir) {
       await cleanupClone(cloneDir);
     }

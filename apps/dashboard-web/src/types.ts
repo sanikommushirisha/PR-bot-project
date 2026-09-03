@@ -14,16 +14,41 @@ export interface DashboardCard {
   jobId: number | null;
 }
 
+export type IntegrationSource = "claude" | "github" | "linear" | "system";
+
 export interface JobLogEntry {
-  seq: number;
-  timestamp: string;
-  text: string;
+  id: number;
+  source: IntegrationSource;
+  level: "info" | "error";
+  createdAt: string;
+  message: string;
 }
 
 export interface JobLogsResponse {
   status: string;
   logs: JobLogEntry[];
 }
+
+export interface IntegrationErrorEntry {
+  id: number;
+  jobId: number | null;
+  jobIdentifier: string | null;
+  source: IntegrationSource;
+  level: "info" | "error";
+  message: string;
+  createdAt: string;
+}
+
+export interface IntegrationErrorsResponse {
+  errors: IntegrationErrorEntry[];
+}
+
+export const INTEGRATION_SOURCE_LABEL: Record<IntegrationSource, string> = {
+  claude: "Claude",
+  github: "GitHub",
+  linear: "Linear",
+  system: "System",
+};
 
 export interface DashboardLanes {
   your_move: DashboardCard[];

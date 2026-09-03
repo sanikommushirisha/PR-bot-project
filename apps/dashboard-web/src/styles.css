@@ -282,6 +282,43 @@ input {
 .pill-stage {
   color: var(--muted);
 }
+.pill-source {
+  font-weight: 700;
+  color: #fff;
+  border-color: transparent;
+  flex-shrink: 0;
+}
+.pill-source-claude {
+  background: var(--automated);
+}
+.pill-source-github {
+  background: #1f2328;
+}
+.pill-source-linear {
+  background: var(--waiting);
+}
+.pill-source-system {
+  background: var(--muted);
+}
+
+/* Integration errors panel */
+.errors-panel .lane-header {
+  flex-wrap: wrap;
+}
+.errors-clear-all {
+  margin-left: auto;
+}
+.error-card {
+  border-color: var(--danger);
+}
+.error-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 1;
+}
+.dot-errors {
+  background: var(--danger);
+}
 
 /* Live activity modal */
 .modal-overlay {
@@ -317,6 +354,11 @@ input {
   font-size: 14px;
   margin: 0;
 }
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .modal-body {
   padding: 12px 18px;
   overflow-y: auto;
@@ -333,6 +375,9 @@ input {
   display: flex;
   gap: 8px;
   align-items: baseline;
+}
+.log-line-error .log-text {
+  color: var(--danger);
 }
 .log-time {
   color: var(--muted);

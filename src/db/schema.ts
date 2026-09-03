@@ -35,6 +35,21 @@ CREATE TABLE IF NOT EXISTS slack_threads (
   PRIMARY KEY (channel_id, thread_ts)
 );
 
+-- Records both routine agent activity ('info') and integration failures
+-- ('error') tagged by which integration produced them (claude/github/linear,
+-- or 'system' for anything else, e.g. an uncaught bug). job_id is nullable
+-- because some errors happen outside any job (e.g. resolving the Linear team
+-- at startup). This is the single source for both the dashboard's
+-- per-job "live activity" view and its cross-job "integration errors" view.
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER,
+  source TEXT NOT NULL CHECK (source IN ('claude', 'github', 'linear', 'system')),
+  level TEXT NOT NULL DEFAULT 'info' CHECK (level IN ('info', 'error')),
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Single-row table (id is always 1) tracking the batch-review checkpoint:
 -- how far the automated review has looked, and whatever it last flagged
 -- and is still awaiting a /fix decision on.
@@ -62,6 +77,13 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_priority_created_at ON jobs (status, 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_issue
   ON jobs (linear_issue_id)
   WHERE status IN ('pending', 'running');
+
+-- Serves the per-job "live activity" poll (job_id, id) and the retention
+-- cron's sweep by age (created_at). The cross-job error view filters
+-- WHERE level = 'error' on top of idx_activity_logs_created_at, which is
+-- selective enough (errors are rare) not to need its own index.
+CREATE INDEX IF NOT EXISTS idx_activity_logs_job_id ON activity_logs (job_id, id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs (created_at);
 `;
 
 /**

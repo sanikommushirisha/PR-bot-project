@@ -109,7 +109,21 @@ function isProtectedFilePath(filePath: string): boolean {
 }
 
 /**
+ * Tools the "claude_code" preset exposes by default that aren't in this
+ * session's `allowedTools` (Read/Glob/Grep) and must not silently fall
+ * through to the catch-all allow below. In particular, "Task" spins up
+ * parallel subagents — each one its own full agentic loop making its own
+ * API calls — which let one job burst past the account's rate limit and
+ * crash the whole run (seen on LES-31/LES-32: two Task calls fired near-
+ * simultaneously, both immediately hit "You've hit your limit", and the
+ * subprocess exited nonzero). Read/Glob/Grep already cover legitimate
+ * unattended exploration without that fan-out.
+ */
+const DENIED_TOOLS = new Set(["Task"]);
+
+/**
  * `canUseTool` gate for the agent session:
+ * - Tools in DENIED_TOOLS are blocked outright.
  * - Bash commands are checked against the denylist above.
  * - Write/Edit calls targeting a CI pipeline definition are blocked outright
  *   — a denylist can't catch "wrote a workflow file that runs on the next
@@ -117,6 +131,15 @@ function isProtectedFilePath(filePath: string): boolean {
  * Everything else is passed through unchanged.
  */
 export const guardAgentTool: CanUseTool = async (toolName, input) => {
+  if (DENIED_TOOLS.has(toolName)) {
+    return {
+      behavior: "deny",
+      message:
+        `Blocked for safety: the ${toolName} tool is disabled in this pipeline (it can spawn concurrent ` +
+        "subagent API calls that risk exhausting the shared account rate limit). Use Read/Glob/Grep directly instead.",
+    };
+  }
+
   if (toolName === "Bash") {
     const command = typeof input.command === "string" ? input.command : "";
     const matched = findMatch(command);

@@ -159,10 +159,22 @@ export async function runAgentTask(
   const content = buildPromptContent(issue);
   const prompt = typeof content === "string" ? content : toPromptStream(content);
 
+  // The SDK ignores the Claude Code subprocess's stderr by default (only
+  // captured here, or under DEBUG_CLAUDE_AGENT_SDK) — without this, a
+  // subprocess crash surfaces as nothing but "Claude Code process exited
+  // with code 1" on the dashboard, with the real reason (rate limit,
+  // auth failure, OOM, ...) silently discarded. Buffer the tail of it so
+  // it can be attached to the thrown error below.
+  let stderrTail = "";
+  const MAX_STDERR_TAIL = 4000;
+
   const stream = query({
     prompt,
     options: {
       cwd,
+      stderr: (data: string) => {
+        stderrTail = (stderrTail + data).slice(-MAX_STDERR_TAIL);
+      },
       // This process runs under NODE_ENV=production (ecosystem.config.cjs).
       // Left as-is, that inherits straight into the agent's own shell — and
       // npm's default behavior under NODE_ENV=production is to silently skip
@@ -218,8 +230,12 @@ export async function runAgentTask(
   } catch (err) {
     // The SDK subprocess/transport itself failed (e.g. couldn't reach the
     // Anthropic API, or crashed) — distinct from a completed-but-unsuccessful
-    // run, which is reported via the 'result' message above instead.
-    throw toIntegrationError("claude", "Agent stream failed", err);
+    // run, which is reported via the 'result' message above instead. Append
+    // whatever stderr the process printed on its way out, since the SDK's
+    // own error carries only the exit code.
+    const detail = stderrTail.trim();
+    const context = detail ? `Agent stream failed (stderr: ${truncate(detail, 1000)})` : "Agent stream failed";
+    throw toIntegrationError("claude", context, err);
   }
 
   return { success: !isError, summary, turns, costUsd };

@@ -62,8 +62,9 @@ async function main() {
     createLinearWebhookHandler(db)
   );
 
-  // Slack Events API — currently only used to catch an image posted in a
-  // thread /task registered, so it can be forwarded to the Linear issue.
+  // Slack Events API — catches an image posted in a registered thread (so it
+  // can be forwarded to the Linear issue) and plain-text replies posted
+  // after the agent already ran (so they can resume the issue as a follow-up).
   app.post(
     "/webhooks/slack/events",
     express.json({ verify: saveRawBody }),

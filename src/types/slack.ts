@@ -30,11 +30,28 @@ export interface SlackFileSharedEvent {
   event_ts: string;
 }
 
+/**
+ * A plain message posted in a channel/thread. `subtype` is absent on a
+ * genuine new human message — present (e.g. "message_changed",
+ * "message_deleted", "bot_message") on anything else, including messages
+ * this bot itself posts via chat.postMessage (which also carry `bot_id`).
+ */
+export interface SlackMessageEvent {
+  type: "message";
+  channel: string;
+  user?: string;
+  text?: string;
+  ts: string;
+  thread_ts?: string;
+  bot_id?: string;
+  subtype?: string;
+}
+
 export type SlackEventsPayload =
   | { type: "url_verification"; token: string; challenge: string }
   | {
       type: "event_callback";
       team_id: string;
       api_app_id: string;
-      event: SlackFileSharedEvent | { type: string; [key: string]: unknown };
+      event: SlackFileSharedEvent | SlackMessageEvent | { type: string; [key: string]: unknown };
     };

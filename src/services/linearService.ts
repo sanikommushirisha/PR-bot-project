@@ -134,6 +134,11 @@ export async function moveIssueToStateName(issueId: string, name: string): Promi
   return false;
 }
 
+/** Posts a comment on an issue — used to fold a Slack thread follow-up into the issue's history before re-triggering the agent, so `fetchFullIssueContext` picks it up on the next run. */
+export async function addIssueComment(issueId: string, body: string): Promise<void> {
+  await callLinear(`add comment to issue ${issueId}`, () => linearClient.createComment({ issueId, body }));
+}
+
 export interface IssueImage {
   mediaType: string;
   base64: string;

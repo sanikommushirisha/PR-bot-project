@@ -22,6 +22,10 @@ no database — Linear itself is the state store.
 5. If someone posts an image (pasted or attached) as a reply in that same
    Slack thread, it's uploaded to Linear and embedded inline in the issue's
    description — see "Images from Slack" below.
+6. If someone posts a plain-text reply in that same thread *after* the agent
+   already finished (or failed), it's added as a comment on the Linear issue
+   and the issue is moved back to the trigger state to resume it — see
+   "Resuming a task from Slack" below.
 
 ## Architecture
 
@@ -93,6 +97,33 @@ else in the channel is ignored. It also only gets the image *into* Linear;
 the agent itself still only reads text (title/description/comments), so it
 doesn't "see" the picture, just a markdown link to it in the description.
 
+## Resuming a task from Slack
+
+Once a job finishes (draft PR opened, or failed), just reply in that same
+Slack thread with what you want changed next — e.g. "there's a bug in the
+empty state, please fix it" or "also handle pagination". The server:
+
+1. Looks up the thread's Linear issue (`slack_threads`, same lookup the
+   image feature uses).
+2. Adds your message as a comment on that issue, so the agent sees it as
+   context (`fetchFullIssueContext` includes issue comments) on the next run.
+3. Moves the issue back to the trigger state, which fires the same Linear
+   webhook a human dragging the card would — enqueuing a fresh run.
+4. Replies in-thread once it's done ("Got it — picking this back up now.").
+
+Each run always branches fresh off the current base branch and opens its
+own new draft PR (there's no reuse of a previous run's branch/PR — see the
+"no chaining" note in `jobRunner.ts`), so a resumed task shows up as a
+second draft PR, not a new commit on the first one.
+
+If a message arrives while the previous run for that issue is still
+pending/running, it's added as a Linear comment but does **not** trigger a
+second concurrent run — it'll just be there as context whenever the issue
+is next moved to the trigger state.
+
+This only works for replies in a thread `/task` started; anything else in
+the channel is ignored.
+
 ## Prerequisites
 
 - Node.js 20+ and pnpm
@@ -127,7 +158,8 @@ is the standard shape.
 2. **Basic Information → App Credentials** — copy the **Signing Secret**,
    this is `SLACK_SIGNING_SECRET`.
 3. **OAuth & Permissions → Bot Token Scopes** — add `chat:write`, `channels:history`
-   (needed to receive message events for the image-forwarding feature below),
+   (needed to receive message events — used both for the image-forwarding
+   feature below and for resuming a task from a plain-text thread reply),
    and `files:read` (needed to download an image someone posts). Install the
    app and copy the **Bot User OAuth Token** (`xoxb-...`) — this is
    `SLACK_BOT_TOKEN`. If you add scopes after already installing, reinstall

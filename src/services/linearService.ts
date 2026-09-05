@@ -134,6 +134,23 @@ export async function moveIssueToStateName(issueId: string, name: string): Promi
   return false;
 }
 
+/**
+ * Resolves a human-readable identifier (e.g. "LES-23") to the issue's real
+ * id — used when a Slack thread wasn't created by this bot's own /task flow
+ * (so its issue id isn't already known) but its root message names the issue,
+ * e.g. Linear's own Slack notification for an issue created directly in
+ * Linear. Returns undefined rather than throwing on a bad/stale identifier,
+ * since callers treat this as a best-effort lookup.
+ */
+export async function resolveIssueIdByIdentifier(identifier: string): Promise<string | undefined> {
+  try {
+    const issue = await linearClient.issue(identifier);
+    return issue?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Posts a comment on an issue — used to fold a Slack thread follow-up into the issue's history before re-triggering the agent, so `fetchFullIssueContext` picks it up on the next run. */
 export async function addIssueComment(issueId: string, body: string): Promise<void> {
   await callLinear(`add comment to issue ${issueId}`, () => linearClient.createComment({ issueId, body }));

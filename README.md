@@ -92,37 +92,52 @@ bot token, uploads it to Linear's asset storage, and appends it as an inline
 markdown image in the issue's description. A confirmation reply lands in
 the Slack thread either way (success or failure).
 
-This only works for images posted in a thread `/task` started — anything
-else in the channel is ignored. It also only gets the image *into* Linear;
-the agent itself still only reads text (title/description/comments), so it
-doesn't "see" the picture, just a markdown link to it in the description.
+This also works in the thread under Linear's own Slack notification for an
+issue created directly in Linear (not via `/task`) — see "Issues created
+directly in Linear" below. Any other thread in the channel is ignored. It
+also only gets the image *into* Linear; the agent itself still only reads
+text (title/description/comments), so it doesn't "see" the picture, just a
+markdown link to it in the description.
 
-## Resuming a task from Slack
+## Following up from Slack
 
-Once a job finishes (draft PR opened, or failed), just reply in that same
-Slack thread with what you want changed next — e.g. "there's a bug in the
-empty state, please fix it" or "also handle pagination". The server:
+Reply in a task's Slack thread any time — while the issue is still sitting
+untouched in Backlog, while a run is in progress, after it's finished, or
+after it's failed — with whatever you want added, e.g. "also handle the
+empty state" or "here's a screenshot of what I mean" (see "Images from
+Slack" above). The server looks up the thread's Linear issue (`slack_threads`,
+same lookup the image feature uses) and adds your message as a comment on
+it, so the agent sees it as context (`fetchFullIssueContext` includes every
+issue comment) whenever that issue is next run.
 
-1. Looks up the thread's Linear issue (`slack_threads`, same lookup the
-   image feature uses).
-2. Adds your message as a comment on that issue, so the agent sees it as
-   context (`fetchFullIssueContext` includes issue comments) on the next run.
-3. Moves the issue back to the trigger state, which fires the same Linear
-   webhook a human dragging the card would — enqueuing a fresh run.
-4. Replies in-thread once it's done ("Got it — picking this back up now.").
+This **never** moves the issue's state on its own. Starting or resuming a
+run always stays an explicit state change in Linear — dragging the card,
+`/fix`, or the Linear UI/API — the same whether the thread is one `/task`
+started or one adopted from Linear's own notification (see "Issues created
+directly in Linear" below). A reply just adds context; it never surprises
+you with a run you didn't ask for.
 
 Each run always branches fresh off the current base branch and opens its
 own new draft PR (there's no reuse of a previous run's branch/PR — see the
-"no chaining" note in `jobRunner.ts`), so a resumed task shows up as a
-second draft PR, not a new commit on the first one.
+"no chaining" note in `jobRunner.ts`), so resuming a task after it's already
+run once shows up as a second draft PR, not a new commit on the first one.
 
-If a message arrives while the previous run for that issue is still
-pending/running, it's added as a Linear comment but does **not** trigger a
-second concurrent run — it'll just be there as context whenever the issue
-is next moved to the trigger state.
+This only works for replies in a thread `/task` started, or the fallback
+described next; anything else in the channel is ignored.
 
-This only works for replies in a thread `/task` started; anything else in
-the channel is ignored.
+## Issues created directly in Linear
+
+Both features above also work in the thread under Linear's own Slack
+notification message for an issue created straight in Linear (not via
+`/task`) — no `slack_threads` row exists for that thread yet, so the server
+falls back to reading the thread's root message (the one Linear's Slack app
+posted), pulling the issue's identifier out of it (e.g. `LES-23`, from the
+`linear.app/.../issue/LES-23/...` link Linear's notification always
+includes), and resolving that to the real issue. Once resolved, it's cached
+in `slack_threads` (tagged `source = 'linear'`) so later replies in the same
+thread skip straight to it. From there it behaves exactly like a `/task`
+thread: replies and images both fold into the issue as context, and only
+moving the issue's state in Linear starts a run.
 
 ## Prerequisites
 

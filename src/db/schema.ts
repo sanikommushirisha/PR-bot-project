@@ -22,11 +22,12 @@ CREATE TABLE IF NOT EXISTS jobs (
   completed_at TEXT
 );
 
--- Correlates a Slack thread back to the Linear issue it registered, from the
--- moment /task creates the issue — before any \`jobs\` row exists for it (that
--- only appears once the issue is moved to the trigger state). This is what
--- lets a later message in the same thread (e.g. an image) find its way to
--- the right Linear issue.
+-- Correlates a Slack thread back to the Linear issue it registered — either
+-- from the moment /task creates the issue (before any \`jobs\` row exists for
+-- it, since that only appears once the issue is moved to the trigger state),
+-- or adopted from Linear's own Slack notification thread for an issue
+-- created directly in Linear. This is what lets a later message in the
+-- thread (e.g. a reply, or an image) find its way to the right Linear issue.
 CREATE TABLE IF NOT EXISTS slack_threads (
   channel_id TEXT NOT NULL,
   thread_ts TEXT NOT NULL,

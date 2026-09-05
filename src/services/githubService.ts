@@ -1,13 +1,28 @@
 import { simpleGit, type SimpleGit } from "simple-git";
-import { mkdir, readdir, rm } from "node:fs/promises";
-import { exec as execCallback } from "node:child_process";
-import { promisify } from "node:util";
+import { mkdir, readdir, rm, statfs } from "node:fs/promises";
 import path from "node:path";
 import { createOctokit } from "../config/clients.js";
 import { config } from "../config/env.js";
 import { toIntegrationError } from "../errors/integrationError.js";
 
-const exec = promisify(execCallback);
+/**
+ * Below this, don't even attempt a clone — this box runs jobs one at a time
+ * on shared disk with several other apps, and a partial clone is worse to
+ * clean up than refusing to start.
+ */
+const MIN_FREE_BYTES_FOR_CLONE = 2 * 1024 * 1024 * 1024;
+
+/** Fails fast with a clear message instead of letting git die mid-clone with a raw ENOSPC. */
+async function assertEnoughDiskSpace(dir: string): Promise<void> {
+  const stats = await statfs(dir);
+  const freeBytes = stats.bavail * stats.bsize;
+  if (freeBytes < MIN_FREE_BYTES_FOR_CLONE) {
+    const freeGb = (freeBytes / 1024 ** 3).toFixed(2);
+    throw new Error(
+      `Only ${freeGb}GB free on disk — refusing to clone (needs at least ${MIN_FREE_BYTES_FOR_CLONE / 1024 ** 3}GB headroom). Free up disk space on the host before retrying.`
+    );
+  }
+}
 
 /** Wraps a GitHub-bound call (git over HTTPS, or the REST API) so any failure surfaces on the dashboard tagged as a GitHub integration error. */
 async function callGithub<T>(context: string, fn: () => Promise<T>): Promise<T> {
@@ -66,6 +81,8 @@ export async function cloneRepo(params: {
   branch: string;
   workDirName: string;
 }): Promise<CloneResult> {
+  await assertEnoughDiskSpace(config.worker.scratchDir);
+
   const dir = path.join(config.worker.scratchDir, `${params.workDirName}-${Date.now()}`);
   await mkdir(dir, { recursive: true });
 
@@ -79,41 +96,6 @@ export async function cloneRepo(params: {
   await git.addConfig("user.email", "agent-bridge@users.noreply.github.com");
 
   return { git, dir };
-}
-
-const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
-
-/**
- * Installs the freshly-cloned repo's dependencies, including
- * devDependencies, before the agent starts working. Two things this
- * guards against:
- *  - Without this, whether node_modules exists at all depended entirely on
- *    the agent deciding to run its own install mid-session — some jobs
- *    never did, so the target repo's own pre-push typecheck hook (wired up
- *    by its "prepare" script the moment *any* install runs) silently never
- *    got a chance to run at all.
- *  - This process runs under NODE_ENV=production (ecosystem.config.cjs),
- *    and npm's default behavior there is to skip devDependencies entirely.
- *    Explicitly overriding it here — matching the same override made for
- *    the agent's own env in claudeService.ts — is what actually makes
- *    `npm install` behave like a normal developer checkout.
- * Uses `npm` specifically because that's this target repo's own declared
- * package manager (its package.json pins "packageManager": "npm@...").
- */
-export async function installDependencies(dir: string): Promise<void> {
-  try {
-    await exec("npm install", {
-      cwd: dir,
-      timeout: INSTALL_TIMEOUT_MS,
-      maxBuffer: 20 * 1024 * 1024,
-      env: { ...process.env, NODE_ENV: "development" },
-    });
-  } catch (err) {
-    const std = err && typeof err === "object" ? (err as { stdout?: string; stderr?: string }) : {};
-    const output = [std.stdout, std.stderr].filter(Boolean).join("\n").slice(-4000);
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`npm install failed: ${message}${output ? `\n${output}` : ""}`);
-  }
 }
 
 export async function createBranch(git: SimpleGit, branchName: string): Promise<void> {
